@@ -1,0 +1,22 @@
+# Tema sobrio; Streamlit respeta la preferencia claro/oscuro del sistema.
+[theme]
+primaryColor = "#1F6F8B"
+font = "sans serif"
+
+[theme.light]
+primaryColor = "#1F6F8B"
+backgroundColor = "#FFFFFF"
+secondaryBackgroundColor = "#F3F5F7"
+textColor = "#1B2430"
+
+[theme.dark]
+primaryColor = "#4FA3C0"
+backgroundColor = "#0F1419"
+secondaryBackgroundColor = "#1A222B"
+textColor = "#E6EAEE"
+
+[client]
+toolbarMode = "minimal"
+
+[browser]
+gatherUsageStats = false

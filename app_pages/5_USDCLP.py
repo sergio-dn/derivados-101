@@ -1,0 +1,187 @@
+"""USD/CLP: histórico, volatilidad realizada, distribución por horizonte y backtest de cobertura."""
+
+import sys
+from datetime import date, timedelta
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
+
+import plotly.graph_objects as go
+import streamlit as st
+
+from derivados101.market import (
+    fetch_usdclp_live,
+    hedge_backtest,
+    horizon_changes,
+    load_usdclp,
+    realized_vol,
+)
+from derivados101.ui import (
+    PALETTE,
+    disclaimer,
+    fmt_clp,
+    fmt_num,
+    fmt_pct,
+    fmt_rate,
+    learn_box,
+    page_setup,
+    style_fig,
+)
+
+HORIZON_LABELS = {21: "1 mes", 63: "3 meses", 126: "6 meses", 189: "9 meses", 252: "1 año"}
+
+page_setup("El dólar en Chile: cuánto se mueve", "💵")
+
+learn_box(
+    "Con datos reales del **dólar observado** (Banco Central de Chile) vas a ver cuánto puede "
+    "moverse el USD/CLP en uno, tres o doce meses, qué es la volatilidad y qué habría pasado "
+    "si un importador se hubiera cubierto con un forward en distintas fechas."
+)
+
+
+@st.cache_data(show_spinner=False)
+def _local():
+    return load_usdclp()
+
+
+@st.cache_data(ttl=3600, show_spinner="Descargando desde mindicador.cl…")
+def _live(years: tuple[int, ...]):
+    return fetch_usdclp_live(list(years))
+
+
+source = st.sidebar.radio("Fuente de datos", ["CSV incluido", "Actualizar en vivo (mindicador.cl)"])
+if source.startswith("Actualizar"):
+    df = _live(tuple(range(2024, date.today().year + 1)))
+    st.sidebar.caption("Si la descarga falla, se usa el CSV incluido.")
+else:
+    df = _local()
+
+if df.empty:
+    st.error("No hay datos disponibles.")
+    st.stop()
+
+last = df.iloc[-1]
+first = df.iloc[0]
+m1, m2, m3, m4 = st.columns(4)
+m1.metric(f"Último dato ({last['date']:%d-%m-%Y})", fmt_rate(last["usdclp"]),
+          delta=f"{fmt_pct(last['usdclp'] / first['usdclp'] - 1)} desde {first['date']:%m-%Y}",
+          delta_color="off")
+m2.metric("Mínimo del período", fmt_rate(df["usdclp"].min()))
+m3.metric("Máximo del período", fmt_rate(df["usdclp"].max()))
+m4.metric("Observaciones", fmt_num(len(df)))
+
+# ------------------------------------------------------------------ 1. histórico
+st.header("1. Histórico")
+fig = go.Figure(go.Scatter(x=df["date"], y=df["usdclp"], name="Dólar observado",
+                           line=dict(color=PALETTE["primary"])))
+st.plotly_chart(style_fig(fig, None, "CLP por USD"), width="stretch")
+st.caption("Fuente: Banco Central de Chile, dólar observado, vía mindicador.cl.")
+
+# ------------------------------------------------------------------ 2. volatilidad
+st.header("2. Volatilidad realizada")
+st.markdown(
+    "La **volatilidad** mide cuán bruscos son los movimientos diarios, expresada en términos "
+    "anuales. Es el insumo clave del precio de una opción: más volatilidad, prima más cara."
+)
+window = st.select_slider("Ventana (días hábiles)", options=[10, 21, 63, 126], value=21)
+vol = realized_vol(df, window=window).dropna()
+fig_v = go.Figure(go.Scatter(x=vol.index, y=vol * 100, name="Vol. realizada", line=dict(color=PALETTE["secondary"])))
+if not vol.empty:
+    fig_v.add_hline(y=float(vol.mean() * 100), line_dash="dot", line_color=PALETTE["neutral"],
+                    annotation_text=f"Promedio {fmt_num(vol.mean() * 100, 1)}%")
+st.plotly_chart(style_fig(fig_v, None, "% anual", height=340), width="stretch")
+with st.expander("Cómo se calcula"):
+    st.latex(r"r_t=\ln\frac{S_t}{S_{t-1}} \qquad \sigma_{anual}=\text{desv.est.}(r_t)\cdot\sqrt{252}")
+    st.markdown(
+        "Una vol de 12% anual equivale, groseramente, a que en un año el dólar se mueva "
+        "±12% o menos con ~68% de probabilidad (si los retornos fueran normales, que no lo son "
+        "del todo: hay más eventos extremos)."
+    )
+
+# ------------------------------------------------------------------ 3. horizontes
+st.header("3. ¿Cuánto puede moverse en un plazo?")
+hc = horizon_changes(df)
+if hc.empty:
+    st.info("No hay datos suficientes para calcular variaciones por horizonte.")
+else:
+    table = hc.assign(
+        Plazo=hc["horizon_days"].map(lambda h: HORIZON_LABELS.get(h, f"{h} días")),
+        Ventanas=hc["n"].map(fmt_num),
+        **{
+            "Mayor baja": hc["min"].map(fmt_pct),
+            "P5": hc["p5"].map(fmt_pct),
+            "Mediana": hc["p50"].map(fmt_pct),
+            "P95": hc["p95"].map(fmt_pct),
+            "Mayor alza": hc["max"].map(fmt_pct),
+            "Desv. est.": hc["std"].map(fmt_pct),
+        },
+    )[["Plazo", "Ventanas", "Mayor baja", "P5", "Mediana", "P95", "Mayor alza", "Desv. est."]]
+    st.dataframe(table, hide_index=True, width="stretch")
+    st.markdown(
+        "**Cómo leerlo según tu posición:** para un **importador** (debe USD) el riesgo es la "
+        "**mayor alza**: cada punto que sube el dólar encarece lo que paga. Para un **exportador** "
+        "(recibe USD) el riesgo es la **mayor baja**: cada punto que cae reduce sus ingresos en pesos."
+    )
+
+    fig_h = go.Figure()
+    x = table["Plazo"]
+    fig_h.add_trace(go.Bar(x=x, y=(hc["p95"] - hc["p5"]) * 100, base=hc["p5"] * 100, name="Rango P5–P95",
+                           marker_color="rgba(31,111,139,0.35)"))
+    fig_h.add_trace(go.Scatter(x=x, y=hc["p50"] * 100, mode="markers", name="Mediana",
+                               marker=dict(color=PALETTE["primary"], size=10)))
+    fig_h.add_trace(go.Scatter(x=x, y=hc["max"] * 100, mode="markers", name="Mayor alza (malo para importador)",
+                               marker=dict(color=PALETTE["negative"], symbol="triangle-up", size=10)))
+    fig_h.add_trace(go.Scatter(x=x, y=hc["min"] * 100, mode="markers", name="Mayor baja (malo para exportador)",
+                               marker=dict(color=PALETTE["accent"], symbol="triangle-down", size=10)))
+    fig_h.update_layout(hovermode="closest")
+    st.plotly_chart(style_fig(fig_h, None, "Variación % del USD/CLP", height=360), width="stretch")
+    st.caption(
+        "Ventanas traslapadas: las observaciones no son independientes y el período es corto. "
+        "Es una ilustración del orden de magnitud, no una estimación de riesgo."
+    )
+
+# ------------------------------------------------------------------ 4. backtest
+st.header("4. ¿Y si me hubiera cubierto?")
+st.markdown(
+    "Un importador sabe en una fecha que deberá pagar dólares a cierto plazo. Compara "
+    "comprar los dólares al spot del vencimiento contra haber fijado ese día un **forward teórico** "
+    "(paridad de tasas con las tasas supuestas, que puedes editar). No es el forward que cotizó el "
+    "mercado en esa fecha."
+)
+min_d = first["date"].date()
+c1, c2, c3, c4, c5 = st.columns(5)
+years = c2.select_slider("Plazo", options=[1 / 12, 0.25, 0.5, 0.75, 1.0], value=0.5,
+                         format_func=lambda y: f"{fmt_num(y * 12, 0)} meses")
+latest_start = max(min_d, (last["date"] - timedelta(days=round(years * 365))).date())
+start = c1.date_input("Fecha de decisión", value=min_d, min_value=min_d, max_value=max(latest_start, min_d),
+                      format="DD/MM/YYYY")
+r_dom = c3.number_input("Tasa CLP supuesta (%)", 0.0, 30.0, 5.11, 0.05, format="%.2f") / 100
+r_for = c4.number_input("Tasa USD supuesta (%)", 0.0, 30.0, 4.07, 0.05, format="%.2f") / 100
+nominal = c5.number_input("Nocional (USD)", 1_000.0, 50_000_000.0, 500_000.0, 10_000.0, format="%.0f")
+
+try:
+    bt = hedge_backtest(df, start, years, r_dom, r_for, nominal)
+except ValueError as exc:
+    st.warning(f"No se pudo calcular: {exc}")
+else:
+    b1, b2, b3, b4 = st.columns(4)
+    b1.metric(f"Spot al decidir ({bt['start_date']:%d-%m-%Y})", fmt_rate(bt["spot_start"]))
+    b2.metric("Forward teórico", fmt_rate(bt["fwd_rate"]),
+              help="Paridad de tasas con las tasas supuestas (inputs de arriba), no el forward que cotizó el mercado ese día.")
+    b3.metric(f"Spot al vencimiento ({bt['end_date']:%d-%m-%Y})", fmt_rate(bt["spot_end"]))
+    b4.metric("Compensación del forward", fmt_clp(bt["compensation"]),
+              delta="recibe" if bt["compensation"] >= 0 else "paga",
+              delta_color="normal", delta_arrow="up" if bt["compensation"] >= 0 else "down")
+    d1, d2, d3 = st.columns(3)
+    d1.metric("Costo sin cobertura", fmt_clp(bt["cost_unhedged"]))
+    d2.metric("Costo con forward teórico", fmt_clp(bt["cost_hedged"]))
+    d3.metric("Diferencia ex post", fmt_clp(bt["savings"]),
+              delta="la cobertura convino" if bt["savings"] >= 0 else "habría convenido no cubrirse",
+              delta_color="normal", delta_arrow="up" if bt["savings"] >= 0 else "down")
+    st.caption(
+        "Tasas constantes para todo el período (simplificación: en la realidad se usarían las "
+        "tasas vigentes en la fecha de decisión). Que la cobertura haya 'perdido' ex post no la "
+        "hace una mala decisión: su objetivo era eliminar la incertidumbre."
+    )
+
+disclaimer()
