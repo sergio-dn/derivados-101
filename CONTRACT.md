@@ -9,7 +9,7 @@ especialistas y público general (posible post en LinkedIn). Todo en español ne
 - Python 3.12 en `.venv` (ya creado: `.venv/bin/python`). No cambiar dependencias sin
   avisar en el reporte final. Sin scipy: usar `math.erf` para la normal.
 - Código en inglés, docstrings/comentarios/UI en español.
-- Nada de datos de Wild Lama ni de nadie: ejemplos genéricos ("un importador chileno").
+- Nada de datos de empresas o personas reales: ejemplos genéricos ("un importador chileno").
 - Disclaimer visible: "Material educativo. No es asesoría financiera ni contable."
 - Los agentes NO hacen commit. Commitea el orquestador.
 - Cada agente escribe SOLO en sus carpetas (ver "Dueños").
