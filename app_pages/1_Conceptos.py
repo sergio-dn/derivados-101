@@ -7,9 +7,13 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 import streamlit as st
 
-from derivados101.ui import disclaimer, learn_box, page_setup
+from derivados101.ui import PAGES, disclaimer, learn_box, page_setup, section
 
-page_setup("Conceptos clave", "📚")
+page_setup(
+    "Conceptos clave",
+    icon=PAGES[1].icon,
+    subtitle="Las preguntas frecuentes antes de firmar un derivado, y cómo se reflejan en la contabilidad.",
+)
 
 learn_box(
     "Las 8 preguntas que todo equipo de finanzas se hace antes de firmar un derivado: "
@@ -116,22 +120,46 @@ plazo que queda y se trae a valor presente. Pruébalo en la sección "MtM" de la
     ),
 ]
 
-st.header("Preguntas frecuentes")
-for question, answer in FAQ:
-    with st.expander(question, expanded=question.startswith("1.")):
-        st.markdown(answer)
+# Bloques temáticos del FAQ: (pestaña, ícono, índices de FAQ). Mantienen el orden 1→8.
+FAQ_GROUPS: list[tuple[str, str, list[int]]] = [
+    ("Fundamentos", ":material/lightbulb:", [0, 1, 2]),
+    ("Contratar y contabilizar", ":material/receipt_long:", [3, 4, 5]),
+    ("Valorización", ":material/calculate:", [6, 7]),
+]
+FAQ_ICONS = [
+    ":material/help:",
+    ":material/target:",
+    ":material/category:",
+    ":material/account_balance:",
+    ":material/checklist:",
+    ":material/balance:",
+    ":material/price_check:",
+    ":material/event_repeat:",
+]
 
-st.header("¿Dónde va la ganancia o pérdida del derivado?")
+section("Preguntas frecuentes", icon=":material/forum:")
+tabs = st.tabs([f"{icon} {name}" for name, icon, _ in FAQ_GROUPS])
+for tab, (_name, _icon, idxs) in zip(tabs, FAQ_GROUPS, strict=True):
+    with tab:
+        for j, i in enumerate(idxs):
+            question, answer = FAQ[i]
+            with st.expander(question, icon=FAQ_ICONS[i], expanded=(j == 0)):
+                st.markdown(answer)
+
+section("¿Dónde va la ganancia o pérdida del derivado?", icon=":material/account_balance_wallet:")
 st.warning(
-    "Simplificación pedagógica. La aplicación de IFRS 9 (designación, medición de "
+    "La aplicación de IFRS 9 (designación, medición de "
     "efectividad, tratamiento del valor temporal de opciones y de los puntos forward, "
     "impuestos diferidos) requiere revisión con tus auditores.",
-    icon="📝",
+    title="Simplificación pedagógica",
+    icon=":material/edit_note:",
 )
 
-c1, c2 = st.columns(2)
-with c1, st.container(border=True):
-    st.subheader("Sin hedge accounting")
+# Dos tarjetas lado a lado y de igual alto: contenedor horizontal con hijos height="stretch".
+cards = st.container(horizontal=True, gap="medium")
+with cards, st.container(border=True, height="stretch"):
+    st.subheader("Sin hedge accounting", anchor=False)
+    st.badge("MtM a resultados", icon=":material/show_chart:", color="orange")
     st.markdown(
         """
 **Especulación o cobertura no designada.**
@@ -143,8 +171,9 @@ with c1, st.container(border=True):
 **Efecto:** el resultado muestra volatilidad aunque la cobertura funcione económicamente.
 """
     )
-with c2, st.container(border=True):
-    st.subheader("Con hedge accounting (flujo de efectivo)")
+with cards, st.container(border=True, height="stretch"):
+    st.subheader("Con hedge accounting (flujo de efectivo)", anchor=False)
+    st.badge("Porción efectiva a OCI", icon=":material/savings:", color="green")
     st.markdown(
         """
 **Cobertura designada y documentada.**
@@ -160,7 +189,9 @@ with c2, st.container(border=True):
 """
     )
 
-with st.expander("Requisitos para aplicar hedge accounting (IFRS 9 6.3.3 y 6.4.1)"):
+with st.expander(
+    "Requisitos para aplicar hedge accounting (IFRS 9 6.3.3 y 6.4.1)", icon=":material/fact_check:"
+):
     st.markdown(
         """
 - **Designación y documentación formal al inicio** de la relación: objetivo y estrategia de
@@ -175,7 +206,7 @@ with st.expander("Requisitos para aplicar hedge accounting (IFRS 9 6.3.3 y 6.4.1
 """
     )
 
-with st.expander("Ejemplo numérico simple"):
+with st.expander("Ejemplo numérico simple", icon=":material/table_chart:"):
     st.markdown(
         """
 Un importador compra un forward por US\\$500.000 a \\$898,89 para pagar una importación de
@@ -194,4 +225,4 @@ cambio fijado. El efecto llega a resultados recién vía costo de venta, cuando 
 """
     )
 
-disclaimer()
+disclaimer(current="1_Conceptos.py")

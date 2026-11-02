@@ -35,24 +35,24 @@ def test_forward_default_matches_spreadsheet() -> None:
 
 def test_forward_slider_and_sell_side() -> None:
     at = _run("app_pages/2_Forward.py")
-    at.radio[0].set_value(at.radio[0].options[1]).run()
-    at.slider[0].set_value(at.slider[0].max).run()
+    at.segmented_control(key="fwd_side").set_value("sell").run()
+    at.slider(key="fwd_spot_T").set_value(at.slider(key="fwd_spot_T").max).run()
     assert not at.exception
 
 
 @pytest.mark.parametrize("kind_idx,pos_idx", [(0, 0), (0, 1), (1, 0), (1, 1)])
 def test_options_all_combinations(kind_idx: int, pos_idx: int) -> None:
     at = _run("app_pages/3_Opciones.py")
-    at.sidebar.radio[0].set_value(at.sidebar.radio[0].options[kind_idx])
-    at.sidebar.radio[1].set_value(at.sidebar.radio[1].options[pos_idx])
-    at.sidebar.radio[2].set_value(at.sidebar.radio[2].options[1]).run()
+    at.segmented_control(key="opt_kind").set_value(["call", "put"][kind_idx])
+    at.segmented_control(key="opt_position").set_value(["long", "short"][pos_idx])
+    at.segmented_control(key="opt_prem_mode").set_value("manual").run()
     assert not at.exception
 
 
 def test_strategies_every_preset() -> None:
     at = _run("app_pages/4_Estrategias.py")
-    for key in at.sidebar.selectbox[0].options:
-        at.sidebar.selectbox[0].set_value(key).run()
+    for key in at.selectbox(key="strat_preset").options:
+        at.selectbox(key="strat_preset").set_value(key).run()
         assert not at.exception, key
 
 

@@ -7,6 +7,7 @@ Este módulo sí importa Streamlit (a diferencia del resto del núcleo, que es p
 from __future__ import annotations
 
 import math
+from dataclasses import dataclass
 
 import plotly.graph_objects as go
 import streamlit as st
@@ -81,25 +82,96 @@ def fmt_pct(value: float | None, decimals: int = 2) -> str:
     return f"{fmt_num(value * 100, decimals)}%"
 
 
+# ---------------------------------------------------------------- registro de páginas
+
+
+@dataclass(frozen=True)
+class PageInfo:
+    """Metadatos de una página: única fuente para la navegación, el mapa de Inicio y "siguiente"."""
+
+    path: str  # relativo a la raíz del repo
+    title: str  # nombre corto en el menú
+    icon: str  # Material Symbol (":material/...:")
+    section: str  # grupo en el menú lateral
+    blurb: str  # una línea para el mapa de Inicio
+
+
+PAGES: list[PageInfo] = [
+    PageInfo("app_pages/0_Inicio.py", "Inicio", ":material/explore:", "Empezar",
+             "Qué es un derivado y cómo recorrer la app."),
+    PageInfo("app_pages/1_Conceptos.py", "Conceptos", ":material/menu_book:", "Empezar",
+             "Las 8 preguntas frecuentes y cómo se contabilizan."),
+    PageInfo("app_pages/2_Forward.py", "Forward", ":material/trending_flat:", "Instrumentos",
+             "Fijar hoy el dólar futuro: puntos forward, liquidación y MtM."),
+    PageInfo("app_pages/3_Opciones.py", "Opciones", ":material/tune:", "Instrumentos",
+             "Derecho sin obligación: prima, valor intrínseco y temporal."),
+    PageInfo("app_pages/4_Estrategias.py", "Estrategias", ":material/stacks:", "Instrumentos",
+             "Combinar opciones: collares, spreads y el collar de costo cero."),
+    PageInfo("app_pages/5_USDCLP.py", "Dólar en Chile", ":material/monitoring:", "Práctica",
+             "Cuánto se mueve el USD/CLP y qué habría pasado cubriéndose."),
+    PageInfo("app_pages/6_Quiz.py", "Quiz", ":material/quiz:", "Práctica",
+             "Pon a prueba lo aprendido."),
+]
+
+
+def _page_info(path_suffix: str) -> PageInfo | None:
+    return next((p for p in PAGES if p.path.endswith(path_suffix)), None)
+
+
 # ---------------------------------------------------------------- bloques de página
 
 
-def page_setup(title: str, icon: str = "📘") -> None:
-    """Configura la página (debe llamarse primero) y muestra el título."""
+def page_setup(title: str, icon: str = ":material/school:", subtitle: str | None = None) -> None:
+    """Configura la página (debe llamarse primero) y muestra título y bajada opcional.
+
+    ``icon`` es un Material Symbol (":material/...:"). ``subtitle`` es una frase corta bajo el título.
+    """
     st.set_page_config(page_title=f"{title} · Derivados 101", page_icon=icon, layout="wide")
-    st.title(f"{icon} {title}")
+    st.title(title, icon=icon)
+    if subtitle:
+        st.markdown(f":gray[{subtitle}]")
 
 
 def learn_box(text: str) -> None:
-    """Párrafo corto de 'qué vas a aprender' al inicio de cada página."""
-    st.info(f"**Qué vas a aprender.** {text}", icon="🎯")
+    """Recuadro de 'qué vas a aprender' al inicio de cada página."""
+    st.info(text, title="Qué vas a aprender", icon=":material/school:")
 
 
-def disclaimer() -> None:
-    """Disclaimer visible al pie de cada página y en la barra lateral."""
-    st.sidebar.caption(f"⚠️ {DISCLAIMER}")
-    st.divider()
-    st.caption(f"⚠️ {DISCLAIMER} Ejemplos genéricos con datos ilustrativos.")
+def section(title: str, icon: str | None = None) -> None:
+    """Encabezado de sección numerada dentro de una página (st.header con ícono opcional)."""
+    st.header(title, icon=icon)
+
+
+def next_page(current: str) -> None:
+    """Enlaces "anterior / siguiente" al pie para recorrer la app en orden.
+
+    ``current`` es el nombre de archivo de la página (ej. "2_Forward.py"). Solo funciona bajo
+    st.navigation (app.py); si la página corre suelta (tests directos), no muestra nada.
+    """
+    info = _page_info(current)
+    if info is None:
+        return
+    idx = PAGES.index(info)
+    prev_p = PAGES[idx - 1] if idx > 0 else None
+    next_p = PAGES[idx + 1] if idx + 1 < len(PAGES) else None
+    try:
+        with st.container(horizontal=True, horizontal_alignment="distribute"):
+            if prev_p:
+                st.page_link(prev_p.path, label=f"Anterior: {prev_p.title}", icon=":material/arrow_back:")
+            if next_p:
+                st.page_link(next_p.path, label=f"Siguiente: {next_p.title}", icon=":material/arrow_forward:",
+                             icon_position="right")
+    except Exception:  # noqa: BLE001 - st.page_link exige st.navigation; fuera de ella se omite
+        pass
+
+
+def disclaimer(current: str | None = None) -> None:
+    """Pie de página: navegación anterior/siguiente (si se indica la página) y disclaimer visible."""
+    st.space("medium")
+    if current:
+        next_page(current)
+    st.sidebar.caption(f":material/info: {DISCLAIMER}")
+    st.caption(f":material/info: {DISCLAIMER} Ejemplos genéricos con datos ilustrativos.")
 
 
 # ---------------------------------------------------------------- Plotly

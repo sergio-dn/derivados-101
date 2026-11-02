@@ -7,9 +7,13 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 import streamlit as st
 
-from derivados101.ui import disclaimer, learn_box, page_setup
+from derivados101.ui import PAGES, disclaimer, learn_box, page_setup, section
 
-page_setup("Quiz: ¿quedó claro?", "✅")
+page_setup(
+    "Quiz: ¿quedó claro?",
+    icon=PAGES[-1].icon,
+    subtitle="Diez preguntas cortas sobre forwards, opciones y su contabilización.",
+)
 
 learn_box(
     "Diez preguntas para comprobar lo aprendido. Responde todas y presiona **Revisar**: "
@@ -96,28 +100,62 @@ QUESTIONS: list[tuple[str, list[str], int, str]] = [
     ),
 ]
 
-with st.form("quiz"):
-    answers: list[str | None] = []
-    for i, (q, opts, _, _) in enumerate(QUESTIONS, start=1):
-        answers.append(st.radio(f"**{i}. {q}**", opts, index=None, key=f"q{i}"))
-    submitted = st.form_submit_button("Revisar", type="primary")
+KEYS = [f"q{i}" for i in range(1, len(QUESTIONS) + 1)]
 
-if submitted:
+
+def _mark_checked() -> None:
+    """Callback del botón Revisar: activa la corrección en línea de cada tarjeta."""
+    st.session_state["quiz_checked"] = True
+
+
+def _reset_quiz() -> None:
+    """Borra respuestas y corrección para volver a empezar."""
+    for key in KEYS:
+        st.session_state.pop(key, None)
+    st.session_state["quiz_checked"] = False
+
+
+checked = st.session_state.get("quiz_checked", False)
+
+# Los radios viven en un form: su valor se actualiza al presionar "Revisar", no en cada clic.
+answered = sum(st.session_state.get(k) is not None for k in KEYS)
+st.progress(
+    answered / len(QUESTIONS),
+    text=f"Respondidas al revisar: {answered} de {len(QUESTIONS)}",
+)
+
+with st.form("quiz", border=False):
+    answers: list[str | None] = []
+    for i, (q, opts, correct, why) in enumerate(QUESTIONS, start=1):
+        with st.container(border=True):
+            ans = st.radio(f"**{i}. {q}**", opts, index=None, key=f"q{i}")
+            answers.append(ans)
+            if checked and ans is not None:
+                if ans == opts[correct]:
+                    st.success(why, title="Correcto", icon=":material/check_circle:")
+                else:
+                    st.error(
+                        f"Respuesta correcta: *{opts[correct]}*. {why}",
+                        title="Incorrecto",
+                        icon=":material/cancel:",
+                    )
+    submitted = st.form_submit_button(
+        "Revisar", type="primary", icon=":material/fact_check:", on_click=_mark_checked
+    )
+
+if checked:
+    section("Resultado", icon=":material/scoreboard:")
     unanswered = [i for i, a in enumerate(answers, start=1) if a is None]
     if unanswered:
-        st.warning(f"Faltan por responder: {', '.join(map(str, unanswered))}.")
-    score = 0
-    for i, ((_q, opts, correct, why), ans) in enumerate(zip(QUESTIONS, answers, strict=True), start=1):
-        if ans is None:
-            continue
-        ok = ans == opts[correct]
-        score += ok
-        if ok:
-            st.success(f"**{i}.** Correcto. {why}")
-        else:
-            st.error(f"**{i}.** Respuesta correcta: *{opts[correct]}*. {why}")
-    st.metric("Puntaje", f"{score} / {len(QUESTIONS)}")
-    if score == len(QUESTIONS):
+        st.warning(
+            f"Faltan por responder: {', '.join(map(str, unanswered))}.",
+            icon=":material/pending:",
+        )
+    score = sum(a == opts[c] for (_q, opts, c, _w), a in zip(QUESTIONS, answers, strict=True))
+    with st.container(horizontal=True, vertical_alignment="bottom"):
+        st.metric("Puntaje", f"{score} / {len(QUESTIONS)}", border=True, width="content")
+        st.button("Volver a empezar", icon=":material/restart_alt:", on_click=_reset_quiz, key="quiz_reset")
+    if submitted and score == len(QUESTIONS):
         st.balloons()
 
-disclaimer()
+disclaimer(current="6_Quiz.py")

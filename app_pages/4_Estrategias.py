@@ -20,6 +20,7 @@ from derivados101.strategies import (
     strategy_pnl,
 )
 from derivados101.ui import (
+    PAGES,
     PALETTE,
     disclaimer,
     fmt_clp,
@@ -28,6 +29,7 @@ from derivados101.ui import (
     fmt_rate,
     learn_box,
     page_setup,
+    section,
     style_fig,
     vline,
 )
@@ -41,7 +43,18 @@ EXPOSURE_LABELS = {
 KIND_LABELS = {"call": "Call", "put": "Put"}
 POS_LABELS = {"long": "Compro (long)", "short": "Vendo (short)"}
 
-page_setup("Estrategias: combinar opciones", "🧩")
+EXPOSURE_SHORT = {
+    "short_usd": "Debo USD",
+    "long_usd": "Recibiré USD",
+    "none": "Sin exposición",
+}
+
+info = next(p for p in PAGES if p.path.endswith("4_Estrategias.py"))
+page_setup(
+    "Estrategias: combinar opciones",
+    info.icon,
+    subtitle="Collares, spreads y otras combinaciones, vistas junto con el negocio que cubren.",
+)
 
 learn_box(
     "Combinando opciones compradas y vendidas se puede **diseñar** la protección: ponerle techo "
@@ -51,49 +64,73 @@ learn_box(
 )
 
 st.warning(
-    "**Ojo con el sentido del collar.** Importador (pasivo en USD): **compra call + vende put**. "
+    "Importador (pasivo en USD): **compra call + vende put**. "
     "Exportador (activo en USD): **compra put + vende call**. Usar el del otro duplica el riesgo "
     "en vez de cubrirlo.",
-    icon="⚠️",
+    title="Ojo con el sentido del collar",
+    icon=":material/warning:",
 )
 
 # ------------------------------------------------------------------ inputs
-with st.sidebar:
-    st.header("Estrategia")
-    preset_key = st.selectbox(
+PRESET_KEYS = list(PRESETS)
+EXP_KEYS = list(EXPOSURE_LABELS)
+st.session_state.setdefault("strat_preset", "collar_importer")
+st.session_state.setdefault("strat_notional", 500_000.0)
+
+section("Arma la estrategia", ":material/construction:")
+with st.container(border=True):
+    c_preset, c_exp = st.columns(2, vertical_alignment="bottom")
+    preset_key = c_preset.selectbox(
         "Punto de partida",
-        list(PRESETS),
-        index=list(PRESETS).index("collar_importer"),
+        PRESET_KEYS,
         format_func=lambda k: PRESETS[k].name,
+        key="strat_preset",
     )
     preset = PRESETS[preset_key]
-    spot = st.slider("Spot hoy (CLP/USD)", 700.0, 1_100.0, 890.0, 1.0)
-    premium_pct = st.slider(
-        "Prima de una opción ATM (% del spot)", 0.0, 6.0, 2.0, 0.1,
-        help="Simplificación: las patas fuera del dinero cuestan menos, las dentro del dinero suman su valor intrínseco.",
-    ) / 100
-    notional = st.number_input("Nocional por pata (USD)", 1_000.0, 50_000_000.0, 500_000.0, 10_000.0, format="%.0f")
-    exp_keys = list(EXPOSURE_LABELS)
-    exposure = st.radio(
+    # Al cambiar de estrategia se sugiere la exposición para la que fue pensada.
+    if st.session_state.get("_strat_last_preset") != preset_key or "strat_exposure" not in st.session_state:
+        st.session_state["strat_exposure"] = preset.suggested_exposure
+        st.session_state["_strat_last_preset"] = preset_key
+    exposure = c_exp.segmented_control(
         "Exposición del negocio",
-        exp_keys,
-        index=exp_keys.index(preset.suggested_exposure),
-        format_func=EXPOSURE_LABELS.get,
-        help="Por defecto, la exposición para la que fue pensada la estrategia.",
+        EXP_KEYS,
+        format_func=EXPOSURE_SHORT.get,
+        required=True,
+        key="strat_exposure",
+        width="stretch",
+        help="Por defecto, la exposición para la que fue pensada la estrategia. "
+        + " · ".join(EXPOSURE_LABELS.values()),
     )
-    exposure_usd = st.number_input("Monto expuesto (USD)", 0.0, 50_000_000.0, float(notional), 10_000.0, format="%.0f")
-    with st.expander("Forward de comparación"):
-        years = st.slider("Plazo (años)", 0.1, 2.0, 0.5, 0.1)
-        r_dom = st.number_input("Tasa CLP (%)", 0.0, 30.0, 5.11, 0.05, format="%.2f") / 100
-        r_for = st.number_input("Tasa USD (%)", 0.0, 30.0, 4.07, 0.05, format="%.2f") / 100
-
-with st.container(border=True):
-    st.markdown(f"**{preset.name}** — {preset.description}")
+    st.markdown(f"**{preset.name}**: {preset.description}")
     st.caption(preset.objective)
 
+    c1, c2, c3, c4 = st.columns(4)
+    spot = c1.slider("Spot hoy (CLP/USD)", 700.0, 1_100.0, 890.0, 1.0, key="strat_spot")
+    premium_pct = c2.slider(
+        "Prima de una opción ATM (% del spot)", 0.0, 6.0, 2.0, 0.1, key="strat_premium_pct",
+        help="Simplificación: las patas fuera del dinero cuestan menos, las dentro del dinero suman su valor intrínseco.",
+    ) / 100
+    notional = c3.number_input("Nocional por pata (USD)", 1_000.0, 50_000_000.0, step=10_000.0,
+                               format="%.0f", key="strat_notional")
+    # El monto expuesto sigue al nocional salvo que el usuario lo cambie después.
+    if st.session_state.get("_strat_last_notional") != notional or "strat_exposure_usd" not in st.session_state:
+        st.session_state["strat_exposure_usd"] = float(notional)
+        st.session_state["_strat_last_notional"] = notional
+    exposure_usd = c4.number_input("Monto expuesto (USD)", 0.0, 50_000_000.0, step=10_000.0,
+                                   format="%.0f", key="strat_exposure_usd",
+                                   disabled=exposure == "none")
+    with st.expander("Forward de comparación", icon=":material/compare_arrows:"):
+        f1, f2, f3 = st.columns(3)
+        years = f1.slider("Plazo (años)", 0.1, 2.0, 0.5, 0.1, key="strat_years")
+        r_dom = f2.number_input("Tasa CLP (%)", 0.0, 30.0, 5.11, 0.05, format="%.2f", key="strat_r_dom") / 100
+        r_for = f3.number_input("Tasa USD (%)", 0.0, 30.0, 4.07, 0.05, format="%.2f", key="strat_r_for") / 100
+
 # ------------------------------------------------------------------ editor
-st.subheader("Patas de la estrategia")
-st.caption(f"Puedes editar, agregar o borrar filas (máximo {MAX_LEGS}). Prima en CLP por USD de nocional.")
+section("Patas de la estrategia", ":material/edit_note:")
+st.caption(
+    f"Cada fila es una opción. Puedes editar, agregar o borrar filas (máximo {MAX_LEGS}). "
+    "Prima en CLP por USD de nocional."
+)
 base_legs = preset.build(spot, premium_pct)
 base_df = pd.DataFrame(
     {
@@ -127,9 +164,9 @@ for row in edited.dropna().to_dict("records"):
     except (ValidationError, TypeError):
         skipped += 1
 if skipped:
-    st.warning(f"Se ignoraron {skipped} fila(s) incompletas o inválidas.")
+    st.warning(f"Se ignoraron {skipped} fila(s) incompletas o inválidas.", icon=":material/rule:")
 if len(legs) > MAX_LEGS:
-    st.warning(f"Se usan solo las primeras {MAX_LEGS} patas.")
+    st.warning(f"Se usan solo las primeras {MAX_LEGS} patas.", icon=":material/rule:")
     legs = legs[:MAX_LEGS]
 
 # ------------------------------------------------------------------ resultados
@@ -138,17 +175,20 @@ res = strategy_pnl(legs, grid, exposure=exposure, spot0=spot, exposure_usd=expos
 prem = net_premium(legs)
 fwd = forward_rate(spot, r_dom, r_for, years)
 
+section("Resultado al vencimiento", ":material/query_stats:")
+target = "combined_pnl" if exposure != "none" else "options_pnl"
 m1, m2, m3, m4 = st.columns(4)
 m1.metric("Prima neta", fmt_clp(abs(prem)),
           delta="pagas (débito)" if prem > 0.5 else ("recibes (crédito)" if prem < -0.5 else "≈ costo cero"),
-          delta_color="off")
-m2.metric("Prima neta (% del nocional)", fmt_pct(prem / (spot * notional)) if notional else "—")
-target = "combined_pnl" if exposure != "none" else "options_pnl"
-m3.metric("Peor resultado en el rango ±20%", fmt_clp(res[target].min()))
-m4.metric("Mejor resultado en el rango ±20%", fmt_clp(res[target].max()))
+          delta_color="off", delta_arrow="off", border=True)
+m2.metric("Prima neta (% del nocional)", fmt_pct(prem / (spot * notional)) if notional else "—", border=True)
+m3.metric("Peor resultado en el rango ±20%", fmt_clp(res[target].min()), border=True,
+          help="Negocio + opciones si hay exposición; solo opciones si no la hay.")
+m4.metric("Mejor resultado en el rango ±20%", fmt_clp(res[target].max()), border=True,
+          help="Negocio + opciones si hay exposición; solo opciones si no la hay.")
 
 if not legs:
-    st.info("Agrega al menos una pata para ver el resultado.")
+    st.info("Agrega al menos una pata para ver el resultado.", icon=":material/add_circle:")
 
 fig = go.Figure()
 fig.add_trace(go.Scatter(x=res["spot"], y=res["options_pnl"], name="Opciones (con primas)",
@@ -165,17 +205,17 @@ if exposure != "none":
 vline(fig, spot, "Spot hoy", color=PALETTE["neutral"], position="top left")
 for leg in legs:
     fig.add_vline(x=leg.strike, line_width=0.5, line_dash="dot", line_color=PALETTE["neutral"])
-fig.update_layout(title="Resultado al vencimiento (respecto del spot de hoy)")
-st.plotly_chart(style_fig(fig, "Spot al vencimiento (CLP/USD)", "CLP", height=460), width="stretch")
+fig.update_layout(title="Resultado respecto del spot de hoy")
+st.plotly_chart(style_fig(fig, "Spot al vencimiento (CLP/USD)", "CLP", height=540), width="stretch")
 
 be = breakevens(res["spot"].to_numpy(), res[target].to_numpy())
 st.markdown(
-    "**Puntos de equilibrio** "
+    ":material/balance: **Puntos de equilibrio** "
     + ("(negocio + opciones): " if exposure != "none" else "(opciones): ")
     + (", ".join(fmt_rate(b) for b in be) if be else "no hay cruces por cero en el rango.")
 )
 
-with st.expander("Cómo leer el gráfico"):
+with st.expander("Cómo leer el gráfico", icon=":material/help:"):
     st.markdown(
         f"""
 - **Opciones**: suma del resultado de cada pata al vencimiento, descontando primas pagadas y
@@ -193,7 +233,7 @@ with st.expander("Cómo leer el gráfico"):
     st.latex(r"\text{PnL}_{\text{opciones}}(S_T)=\sum_i s_i N_i\big[\max(\pm(S_T-K_i),0) - \text{prima}_i\big]")
     st.caption("s = +1 si la pata se compra, −1 si se vende.")
 
-with st.expander("Ejemplo: collar cero costo del importador"):
+with st.expander("Ejemplo: collar cero costo del importador", icon=":material/lightbulb:"):
     st.markdown(
         """
 Un importador debe pagar US\\$500.000. Compra una **call 2% sobre el spot** (techo) y para
@@ -209,7 +249,7 @@ Para el **exportador** es al revés: compra put (piso) y vende call (techo).
 """
     )
 
-with st.expander("Detalle por pata en algunos escenarios"):
+with st.expander("Detalle por pata en algunos escenarios", icon=":material/table_chart:"):
     scen = [spot * k for k in (0.85, 0.95, 1.0, 1.05, 1.15)]
     rows = []
     for i, leg in enumerate(legs, start=1):
@@ -219,4 +259,4 @@ with st.expander("Detalle por pata en algunos escenarios"):
     if rows:
         st.dataframe(pd.DataFrame(rows), hide_index=True, width="stretch")
 
-disclaimer()
+disclaimer(current="4_Estrategias.py")

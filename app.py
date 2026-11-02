@@ -1,7 +1,7 @@
 """Derivados 101 — punto de entrada y navegación.
 
 Ejecutar con: streamlit run app.py
-Las páginas viven en app_pages/; acá se declaran con título e ícono explícitos.
+Las páginas viven en app_pages/; títulos, íconos y secciones salen de ``ui.PAGES``.
 """
 
 import sys
@@ -11,17 +11,15 @@ sys.path.insert(0, str(Path(__file__).resolve().parent / "src"))
 
 import streamlit as st
 
-PAGES_DIR = Path(__file__).resolve().parent / "app_pages"
+from derivados101.ui import PAGES
 
-nav = st.navigation(
-    [
-        st.Page(PAGES_DIR / "0_Inicio.py", title="Inicio", icon="🧭", default=True),
-        st.Page(PAGES_DIR / "1_Conceptos.py", title="Conceptos", icon="📚"),
-        st.Page(PAGES_DIR / "2_Forward.py", title="Forward", icon="📈"),
-        st.Page(PAGES_DIR / "3_Opciones.py", title="Opciones", icon="🎛️"),
-        st.Page(PAGES_DIR / "4_Estrategias.py", title="Estrategias", icon="🧩"),
-        st.Page(PAGES_DIR / "5_USDCLP.py", title="USD/CLP", icon="💵"),
-        st.Page(PAGES_DIR / "6_Quiz.py", title="Quiz", icon="✅"),
-    ]
-)
+ROOT = Path(__file__).resolve().parent
+
+sections: dict[str, list] = {}
+for i, p in enumerate(PAGES):
+    sections.setdefault(p.section, []).append(
+        st.Page(ROOT / p.path, title=p.title, icon=p.icon, default=(i == 0))
+    )
+
+nav = st.navigation(sections)
 nav.run()

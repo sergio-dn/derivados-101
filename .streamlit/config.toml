@@ -1,19 +1,45 @@
-# Tema sobrio; Streamlit respeta la preferencia claro/oscuro del sistema.
+# Tema de Derivados 101. Claro y oscuro siguen la preferencia del sistema (toggle en el menú).
+# Colores de series alineados con ui.PALETTE para que gráficos Plotly y widgets hablen el mismo idioma.
 [theme]
 primaryColor = "#1F6F8B"
-font = "sans serif"
+font = "Inter:https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap"
+headingFontWeights = [700, 650, 600, 600, 500, 500]
+headingFontSizes = ["2.4rem", "1.65rem", "1.25rem", "1.05rem", "0.95rem", "0.85rem"]
+metricValueFontSize = "1.7rem"
+metricValueFontWeight = 650
+baseRadius = "0.6rem"
+buttonRadius = "0.6rem"
+showWidgetBorder = true
+showSidebarBorder = true
+linkUnderline = false
+paddingTop = "2rem"
+paddingBottom = "3rem"
+chartCategoricalColors = ["#1F6F8B", "#E07A2E", "#2E9E6A", "#7A5BA6", "#C8463D", "#8A96A3"]
 
 [theme.light]
 primaryColor = "#1F6F8B"
 backgroundColor = "#FFFFFF"
-secondaryBackgroundColor = "#F3F5F7"
+secondaryBackgroundColor = "#F3F6F8"
 textColor = "#1B2430"
+borderColor = "#DCE3E8"
+dataframeHeaderBackgroundColor = "#EEF3F6"
+
+[theme.light.sidebar]
+backgroundColor = "#F3F6F8"
+secondaryBackgroundColor = "#FFFFFF"
 
 [theme.dark]
 primaryColor = "#4FA3C0"
 backgroundColor = "#0F1419"
 secondaryBackgroundColor = "#1A222B"
 textColor = "#E6EAEE"
+borderColor = "#2A3540"
+dataframeHeaderBackgroundColor = "#1F2933"
+chartCategoricalColors = ["#4FA3C0", "#F0954D", "#4CC08A", "#A487D1", "#E46A61", "#9AA6B2"]
+
+[theme.dark.sidebar]
+backgroundColor = "#141B22"
+secondaryBackgroundColor = "#0F1419"
 
 [client]
 toolbarMode = "minimal"
