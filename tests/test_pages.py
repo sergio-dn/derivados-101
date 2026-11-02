@@ -94,3 +94,19 @@ def test_navigation_reaches_every_page(page: str) -> None:
     at.switch_page(page).run()
     assert not at.exception, [e.message for e in at.exception]
     assert at.title, page
+
+
+def test_menu_sections() -> None:
+    """El menú tiene tres secciones y "Conceptos" lista Inicio + los temas."""
+    from derivados101.curso import CHAPTERS
+    from derivados101.ui import PAGES, SECTIONS
+
+    assert SECTIONS == ["Conceptos", "Simuladores", "Repasa"]
+    assert {p.section for p in PAGES} == set(SECTIONS)
+    from derivados101.curso_ui import page_title
+
+    names = [page_title(c) for c in CHAPTERS]
+    assert all(n and len(n) <= 16 for n in names), names  # cabe en el menú sin cortarse
+    assert len(set(names)) == len(names)
+    assert [p.title for p in PAGES if p.section == "Repasa"] == ["Más preguntas", "Quiz"]
+    assert PAGES[0].section == "Conceptos" and PAGES[0].title == "Inicio"

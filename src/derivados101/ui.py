@@ -145,22 +145,28 @@ class PageInfo:
     blurb: str  # una línea para el mapa de Inicio
 
 
+# El orden de la lista se mantiene (las páginas usan PAGES[1] = Conceptos y PAGES[-1] = Quiz);
+# el orden del menú lo fija SECTIONS. Los temas (una pregunta cada uno) no son archivos: los agrega
+# app.py desde ``curso_ui.chapter_pages()`` justo después de Inicio, en la sección "Conceptos".
 PAGES: list[PageInfo] = [
-    PageInfo("app_pages/0_Inicio.py", "Inicio", ":material/explore:", "Empezar",
-             "Qué es un derivado y cómo recorrer la app."),
-    PageInfo("app_pages/1_Conceptos.py", "Conceptos", ":material/menu_book:", "Empezar",
-             "Las 8 preguntas frecuentes y una idea básica de cómo se registran."),
-    PageInfo("app_pages/2_Forward.py", "Forward", ":material/trending_flat:", "Instrumentos",
+    PageInfo("app_pages/0_Inicio.py", "Inicio", ":material/home:", "Conceptos",
+             "Qué es esto y por dónde empezar."),
+    PageInfo("app_pages/1_Conceptos.py", "Más preguntas", ":material/menu_book:", "Repasa",
+             "Preguntas frecuentes y una idea básica de cómo se registran."),
+    PageInfo("app_pages/2_Forward.py", "Forward", ":material/trending_flat:", "Simuladores",
              "Fijar hoy el dólar futuro: puntos forward, liquidación y MtM."),
-    PageInfo("app_pages/3_Opciones.py", "Opciones", ":material/tune:", "Instrumentos",
+    PageInfo("app_pages/3_Opciones.py", "Opciones", ":material/tune:", "Simuladores",
              "Derecho sin obligación: prima, valor intrínseco y temporal."),
-    PageInfo("app_pages/4_Estrategias.py", "Estrategias", ":material/stacks:", "Instrumentos",
+    PageInfo("app_pages/4_Estrategias.py", "Estrategias", ":material/stacks:", "Simuladores",
              "Combinar opciones: collares, spreads y el collar de costo cero."),
-    PageInfo("app_pages/5_USDCLP.py", "Dólar en Chile", ":material/monitoring:", "Práctica",
+    PageInfo("app_pages/5_USDCLP.py", "Dólar en Chile", ":material/monitoring:", "Simuladores",
              "Cuánto se mueve el USD/CLP y qué habría pasado cubriéndose."),
-    PageInfo("app_pages/6_Quiz.py", "Quiz", ":material/quiz:", "Práctica",
-             "Pon a prueba lo aprendido."),
+    PageInfo("app_pages/6_Quiz.py", "Quiz", ":material/quiz:", "Repasa",
+             "Diez preguntas para comprobar lo aprendido."),
 ]
+
+# Orden de las secciones en el menú lateral.
+SECTIONS: list[str] = ["Conceptos", "Simuladores", "Repasa"]
 
 
 def _page_info(path_suffix: str) -> PageInfo | None:
@@ -198,11 +204,15 @@ def next_page(current: str) -> None:
     st.navigation (app.py); si la página corre suelta (tests directos), no muestra nada.
     """
     info = _page_info(current)
-    if info is None:
+    if info is None or info.section == "Conceptos":
+        return  # Inicio y los temas tienen su propia navegación
+    # Anterior / siguiente dentro de la misma sección del menú.
+    siblings = [p for p in PAGES if p.section == info.section]
+    idx = siblings.index(info)
+    prev_p = siblings[idx - 1] if idx > 0 else None
+    next_p = siblings[idx + 1] if idx + 1 < len(siblings) else None
+    if prev_p is None and next_p is None:
         return
-    idx = PAGES.index(info)
-    prev_p = PAGES[idx - 1] if idx > 0 else None
-    next_p = PAGES[idx + 1] if idx + 1 < len(PAGES) else None
     try:
         with st.container(horizontal=True, horizontal_alignment="distribute"):
             if prev_p:

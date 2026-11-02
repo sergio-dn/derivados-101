@@ -1,4 +1,5 @@
 # Tema de Derivados 101. Claro y oscuro siguen la preferencia del sistema (toggle en el menú).
+# Claro cálido: fondo marfil y barra lateral arena; acento azul petróleo (contraste AA sobre el fondo).
 # Colores de series alineados con ui.PALETTE para que gráficos Plotly y widgets hablen el mismo idioma.
 [theme]
 primaryColor = "#1F6F8B"
@@ -18,28 +19,30 @@ chartCategoricalColors = ["#1F6F8B", "#E07A2E", "#2E9E6A", "#7A5BA6", "#C8463D",
 
 [theme.light]
 primaryColor = "#1F6F8B"
-backgroundColor = "#FFFFFF"
-secondaryBackgroundColor = "#F3F6F8"
-textColor = "#1B2430"
-borderColor = "#DCE3E8"
-dataframeHeaderBackgroundColor = "#EEF3F6"
+backgroundColor = "#FFFDF8"
+secondaryBackgroundColor = "#F5EFE6"
+textColor = "#1E2630"
+borderColor = "#E6DCCD"
+linkColor = "#1F6F8B"
+dataframeHeaderBackgroundColor = "#F3ECE1"
 
 [theme.light.sidebar]
-backgroundColor = "#F3F6F8"
-secondaryBackgroundColor = "#FFFFFF"
+backgroundColor = "#F5EFE6"
+secondaryBackgroundColor = "#FFFDF8"
 
 [theme.dark]
 primaryColor = "#4FA3C0"
-backgroundColor = "#0F1419"
-secondaryBackgroundColor = "#1A222B"
-textColor = "#E6EAEE"
-borderColor = "#2A3540"
+backgroundColor = "#14161A"
+secondaryBackgroundColor = "#1F2227"
+textColor = "#ECE8E1"
+borderColor = "#33363C"
+linkColor = "#6CB8D2"
 dataframeHeaderBackgroundColor = "#1F2933"
 chartCategoricalColors = ["#4FA3C0", "#F0954D", "#4CC08A", "#A487D1", "#E46A61", "#9AA6B2"]
 
 [theme.dark.sidebar]
-backgroundColor = "#141B22"
-secondaryBackgroundColor = "#0F1419"
+backgroundColor = "#1A1C20"
+secondaryBackgroundColor = "#14161A"
 
 [client]
 toolbarMode = "minimal"

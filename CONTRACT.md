@@ -27,7 +27,8 @@ intuición operativa sobre las fórmulas, y el contenido avanzado se simplifica 
 | Carpeta / archivo | Dueño |
 |---|---|
 | `src/derivados101/**`, `tests/**` | agente `core` |
-| `app.py`, `app_pages/**`, `.streamlit/**`, `src/derivados101/ui.py` | agente `ui` |
+| `app.py`, `app_pages/**`, `.streamlit/**`, `src/derivados101/ui.py`, `src/derivados101/curso_ui.py` | agente `ui` |
+| `src/derivados101/curso/cap*.py` (textos de los temas) | agentes de contenido |
 | `README.md`, `LICENSE`, `scripts/**`, `.github/**`, `CLAUDE.md`, `docs/**` | agente `docs` |
 | `CONTRACT.md`, `requirements*.txt`, `data/**` | orquestador |
 
@@ -168,19 +169,19 @@ def simulate_gbm(spot, vol, years, r_dom, r_for, n_paths=500, n_steps=252, seed=
 Streamlit multipage con `st.navigation` (títulos e íconos explícitos en `app.py`). `streamlit run app.py`.
 La carpeta se llama `app_pages/` (no `pages/`) a propósito: con `pages/` Streamlit activa su modo
 multipage antiguo y un link directo tras arrancar el servidor muestra el menú autogenerado.
-Páginas:
-1. `app_pages/0_Inicio.py` — Inicio: qué es un derivado, cobertura vs especulación, mapa de la app.
-2. `app_pages/1_Conceptos.py` — FAQ de la hoja "Derivados" (8 preguntas) + contabilidad
-   (especulación a resultado vía MtM vs hedge accounting IFRS 9 / OCI), con aviso de simplificación.
-3. `app_pages/2_Forward.py` — sintético paso a paso (inputs editables, default planilla:
-   500.000 USD, spot 890, 5,11% / 4,07%, 1 año), liquidación full delivery vs compensación
-   con slider de spot final, gráfico costo cubierto vs no cubierto, MtM en el tiempo.
-4. `app_pages/3_Opciones.py` — una opción: payoff/PnL, valor intrínseco vs temporal (GK),
-   ITM/ATM/OTM, griegas, sensibilidad a vol y plazo, Monte Carlo (fan chart) explicando valor del tiempo.
-5. `app_pages/4_Estrategias.py` — presets + editor de hasta 4 patas, exposición subyacente,
-   gráfico opciones / subyacente / combinado, breakevens, prima neta, comparación vs forward.
-6. `app_pages/5_USDCLP.py` — histórico, vol realizada, distribución por horizonte, backtest de cobertura.
-7. `app_pages/6_Quiz.py` — 8–10 preguntas con feedback y explicación.
+Menú en 3 secciones (`ui.SECTIONS`):
+1. **Conceptos**: Inicio (una línea + lista de preguntas) y 9 temas, uno por pregunta directa
+   ("¿Qué es un forward?"). Contenido puro en `src/derivados101/curso/` (`model.py` = esquema;
+   `cap*.py` = un tema cada uno; `CHAPTERS` = orden). Render en `src/derivados101/curso_ui.py`
+   (st.Page callable, `url_path` = slug, menú con `Chapter.menu` corto ≤16 caracteres).
+   Cada tema: 3–7 pantallas tipo slide (Concept, Example, Demo, Summary), Anterior/Siguiente,
+   al menos 1 **Demo**: calculadora interactiva (10 tipos, `DEMO_PARAMS`) que muestra cómo funciona,
+   no una prueba. Sin preguntas, puntajes ni progreso dentro de los temas.
+2. **Simuladores**: `2_Forward.py`, `3_Opciones.py`, `4_Estrategias.py`, `5_USDCLP.py`.
+3. **Repasa**: `1_Conceptos.py` ("Más preguntas", FAQ) y `6_Quiz.py`.
+
+Cifras de ejemplo de los temas FIJAS (spot 890, 5,11% / 4,07%, 1 año, vol 12%) y verificadas con el
+núcleo; `tests/test_curso.py` fija las clave. Si cambian presets o tasas de ejemplo, revisar textos.
 
 Gráficos con Plotly. `src/derivados101/ui.py` (dueño `ui`): helpers de formato
 (`fmt_clp`, `fmt_usd`, `fmt_pct` con separador de miles "." y decimal ","), disclaimer, paleta.
