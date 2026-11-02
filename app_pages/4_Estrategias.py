@@ -11,7 +11,7 @@ import streamlit as st
 from pydantic import ValidationError
 
 from derivados101.forward import forward_rate
-from derivados101.options import OptionLeg
+from derivados101.options import OptionLeg, garman_kohlhagen
 from derivados101.strategies import (
     PRESETS,
     breakevens,
@@ -23,6 +23,9 @@ from derivados101.ui import (
     PAGES,
     PALETTE,
     disclaimer,
+    example_rates,
+    example_spot,
+    example_spot_note,
     fmt_clp,
     fmt_num,
     fmt_pct,
@@ -74,6 +77,9 @@ st.warning(
 # ------------------------------------------------------------------ inputs
 PRESET_KEYS = list(PRESETS)
 EXP_KEYS = list(EXPOSURE_LABELS)
+LEG_COLS = ["kind", "position", "strike", "notional_usd", "premium"]
+spot_default, _, _ = example_spot()
+r_dom_default, r_for_default, rates_day = example_rates()
 st.session_state.setdefault("strat_preset", "collar_importer")
 st.session_state.setdefault("strat_notional", 500_000.0)
 
@@ -104,46 +110,132 @@ with st.container(border=True):
     st.markdown(f"**{preset.name}**: {preset.description}")
     st.caption(preset.objective)
 
-    c1, c2, c3, c4 = st.columns(4)
-    spot = c1.slider("Spot hoy (CLP/USD)", 700.0, 1_100.0, 890.0, 1.0, key="strat_spot")
-    premium_pct = c2.slider(
-        "Prima de una opción ATM (% del spot)", 0.0, 6.0, 2.0, 0.1, key="strat_premium_pct",
-        help="Simplificación: las patas fuera del dinero cuestan menos, las dentro del dinero suman su valor intrínseco.",
+    c1, c2, c3 = st.columns(3)
+    spot = c1.slider("Spot hoy (CLP/USD)", 600.0, 1_300.0, float(round(spot_default)), 1.0,
+                     format="%.0f", key="strat_spot")
+    vol = c2.slider(
+        "Volatilidad anual (%)", 1.0, 40.0, 12.0, 0.5, format="%.1f", key="strat_vol",
+        help="Cuánto se espera que se mueva el dólar en un año. Más volatilidad = primas más caras "
+        "(hay más chance de que la opción termine sirviendo).",
     ) / 100
-    notional = c3.number_input("Nocional por pata (USD)", 1_000.0, 50_000_000.0, step=10_000.0,
+    years = c3.slider("Plazo (años)", 0.1, 2.0, 0.5, 0.1, key="strat_years",
+                      help="Plazo de las opciones y del forward de comparación.")
+    c4, c5, c6, c7 = st.columns(4)
+    r_dom = c4.number_input("Tasa CLP (%)", 0.0, 30.0, round(r_dom_default * 100, 2), 0.05,
+                            format="%.2f", key="strat_r_dom",
+                            help=f"Tasa de referencia en pesos al {rates_day}.") / 100
+    r_for = c5.number_input("Tasa USD (%)", 0.0, 30.0, round(r_for_default * 100, 2), 0.05,
+                            format="%.2f", key="strat_r_for",
+                            help=f"Tasa de referencia en dólares al {rates_day}.") / 100
+    notional = c6.number_input("Nocional por pata (USD)", 1_000.0, 50_000_000.0, step=10_000.0,
                                format="%.0f", key="strat_notional")
     # El monto expuesto sigue al nocional salvo que el usuario lo cambie después.
     if st.session_state.get("_strat_last_notional") != notional or "strat_exposure_usd" not in st.session_state:
         st.session_state["strat_exposure_usd"] = float(notional)
         st.session_state["_strat_last_notional"] = notional
-    exposure_usd = c4.number_input("Monto expuesto (USD)", 0.0, 50_000_000.0, step=10_000.0,
+    exposure_usd = c7.number_input("Monto expuesto (USD)", 0.0, 50_000_000.0, step=10_000.0,
                                    format="%.0f", key="strat_exposure_usd",
                                    disabled=exposure == "none")
-    with st.expander("Forward de comparación", icon=":material/compare_arrows:"):
-        f1, f2, f3 = st.columns(3)
-        years = f1.slider("Plazo (años)", 0.1, 2.0, 0.5, 0.1, key="strat_years")
-        r_dom = f2.number_input("Tasa CLP (%)", 0.0, 30.0, 5.11, 0.05, format="%.2f", key="strat_r_dom") / 100
-        r_for = f3.number_input("Tasa USD (%)", 0.0, 30.0, 4.07, 0.05, format="%.2f", key="strat_r_for") / 100
+    example_spot_note()
+    st.caption(
+        ":material/calculate: Las primas se calculan con Garman-Kohlhagen (Black-Scholes para monedas) "
+        "con la volatilidad, el plazo y las tasas de arriba. Un banco cotiza con su propio margen."
+    )
+
+
+# ------------------------------------------------------------------ patas (estado)
+def _build_legs_df(spot_: float, vol_: float, years_: float, r_dom_: float, r_for_: float,
+                   notional_: float) -> pd.DataFrame:
+    """Patas del preset con primas teóricas, escaladas al nocional elegido."""
+    legs_ = preset.build(spot_, vol_, years_, r_dom_, r_for_)
+    return pd.DataFrame(
+        {
+            "kind": [leg.kind for leg in legs_],
+            "position": [leg.position for leg in legs_],
+            "strike": [float(leg.strike) for leg in legs_],
+            "notional_usd": [float(notional_)] * len(legs_),
+            "premium": [float(leg.premium) for leg in legs_],
+        },
+        columns=LEG_COLS,
+    )
+
+
+def _reprice(df_: pd.DataFrame) -> pd.DataFrame:
+    """Recalcula la prima teórica de cada fila (mismo strike) con los parámetros actuales."""
+    out = df_.copy()
+    for i, row in out.iterrows():
+        try:
+            out.at[i, "premium"] = garman_kohlhagen(row["kind"], spot, float(row["strike"]),
+                                                    years, r_dom, r_for, vol)
+        except (ValueError, TypeError, KeyError):
+            continue  # fila incompleta: se deja como está
+    return out
+
+
+def _set_base(df_: pd.DataFrame, custom: bool) -> None:
+    """Fija la tabla base del editor y fuerza un editor nuevo (key con versión)."""
+    st.session_state["_strat_base"] = df_.reset_index(drop=True)
+    st.session_state["_strat_edited"] = st.session_state["_strat_base"].copy()
+    st.session_state["_strat_custom"] = custom
+    st.session_state["_strat_ver"] = st.session_state.get("_strat_ver", 0) + 1
+
+
+params = (spot, vol, years, r_dom, r_for)
+prev_edited = st.session_state.get("_strat_edited")
+base = st.session_state.get("_strat_base")
+custom = bool(st.session_state.get("_strat_custom")) or (
+    prev_edited is not None and base is not None and not prev_edited.equals(base)
+)
+if base is None or st.session_state.get("_strat_base_preset") != preset_key:
+    # Nueva estrategia (o primera vez): patas del preset.
+    _set_base(_build_legs_df(*params, notional), custom=False)
+    custom = False
+elif not custom and (st.session_state.get("_strat_params") != params
+                     or st.session_state.get("_strat_base_notional") != notional):
+    # Sin ediciones del usuario: las patas siguen a los parámetros.
+    _set_base(_build_legs_df(*params, notional), custom=False)
+    custom = False
+elif custom and st.session_state.get("_strat_base_notional") != notional:
+    # Con ediciones: se reescalan los nocionales y se conserva lo demás.
+    old_n = st.session_state.get("_strat_base_notional") or notional
+    scaled = prev_edited.copy()
+    scaled["notional_usd"] = scaled["notional_usd"] * (notional / old_n)
+    _set_base(scaled, custom=True)
+st.session_state["_strat_custom"] = custom
+st.session_state["_strat_base_preset"] = preset_key
+st.session_state["_strat_base_notional"] = notional
+if not st.session_state["_strat_custom"]:
+    st.session_state["_strat_params"] = params
 
 # ------------------------------------------------------------------ editor
 section("Patas de la estrategia", ":material/edit_note:")
 st.caption(
-    f"Cada fila es una opción. Puedes editar, agregar o borrar filas (máximo {MAX_LEGS}). "
-    "Prima en CLP por USD de nocional."
+    f"Cada fila es una opción. Puedes editar, agregar o borrar filas (máximo {MAX_LEGS}); tus cambios "
+    "se conservan al mover los parámetros. Prima en CLP por USD de nocional."
 )
-base_legs = preset.build(spot, premium_pct)
-base_df = pd.DataFrame(
-    {
-        "kind": [leg.kind for leg in base_legs],
-        "position": [leg.position for leg in base_legs],
-        "strike": [round(leg.strike, 2) for leg in base_legs],
-        "notional_usd": [float(notional)] * len(base_legs),
-        "premium": [round(leg.premium, 2) for leg in base_legs],
-    }
-)
+stale = st.session_state["_strat_custom"] and st.session_state.get("_strat_params") != params
+b1, b2 = st.columns(2)
+if b1.button("Recalcular primas con los parámetros actuales", icon=":material/refresh:",
+             key="strat_reprice", width="stretch", type="primary" if stale else "secondary",
+             help="Mantiene tus strikes y nocionales; solo vuelve a calcular la prima teórica de cada pata."):
+    _set_base(_reprice(st.session_state["_strat_edited"]), custom=True)
+    st.session_state["_strat_params"] = params
+    stale = False
+if b2.button("Restaurar patas del preset", icon=":material/restart_alt:", key="strat_restore",
+             width="stretch", help="Descarta tus ediciones y vuelve a armar la estrategia elegida."):
+    _set_base(_build_legs_df(*params, notional), custom=False)
+    st.session_state["_strat_params"] = params
+    stale = False
+if stale:
+    st.info(
+        "Cambiaste parámetros después de editar las patas: las primas de la tabla todavía son las "
+        "anteriores. Usa **Recalcular primas** para actualizarlas.",
+        icon=":material/update:",
+    )
+
 edited = st.data_editor(
-    base_df,
-    key=f"legs_{preset_key}_{spot}_{premium_pct}_{notional}",
+    st.session_state["_strat_base"],
+    key=f"strat_legs_{st.session_state['_strat_ver']}",
     num_rows="dynamic",
     hide_index=True,
     width="stretch",
@@ -155,6 +247,7 @@ edited = st.data_editor(
         "premium": st.column_config.NumberColumn("Prima CLP/USD", min_value=0.0, format="%.2f", required=True),
     },
 )
+st.session_state["_strat_edited"] = edited.reset_index(drop=True)
 
 legs: list[OptionLeg] = []
 skipped = 0
@@ -178,10 +271,24 @@ fwd = forward_rate(spot, r_dom, r_for, years)
 section("Resultado al vencimiento", ":material/query_stats:")
 target = "combined_pnl" if exposure != "none" else "options_pnl"
 m1, m2, m3, m4 = st.columns(4)
-m1.metric("Prima neta", fmt_clp(abs(prem)),
-          delta="pagas (débito)" if prem > 0.5 else ("recibes (crédito)" if prem < -0.5 else "≈ costo cero"),
-          delta_color="off", delta_arrow="off", border=True)
-m2.metric("Prima neta (% del nocional)", fmt_pct(prem / (spot * notional)) if notional else "—", border=True)
+# Base del %: el nocional cubierto = mayor nocional entre las patas (un collar de US$500.000
+# cubre US$500.000 aunque tenga dos patas, por eso no se suman).
+covered_usd = max((leg.notional_usd for leg in legs), default=0.0)
+zero_tol = 1e-4 * spot * covered_usd  # 0,01% del monto cubierto: redondeos del solver
+if abs(prem) <= max(zero_tol, 0.5):
+    prem_label, prem_color = "≈ costo cero", "gray"
+elif prem > 0:
+    prem_label, prem_color = "pagas (débito)", "red"
+else:
+    prem_label, prem_color = "recibes (crédito)", "green"
+m1.metric("Prima neta", fmt_clp(abs(prem)), delta=prem_label, delta_color=prem_color,
+          delta_arrow="off", border=True,
+          help="Suma de primas pagadas menos primas recibidas, al inicio.")
+m2.metric("Prima neta (% del nocional)",
+          fmt_pct(prem / (spot * covered_usd)) if covered_usd else "—", border=True,
+          help="Prima neta / (spot hoy × nocional cubierto). Nocional cubierto = el mayor nocional "
+          "entre las patas: un collar de US\\$500.000 cubre US\\$500.000 aunque tenga dos patas. "
+          "Positivo = pagas; negativo = recibes.")
 m3.metric("Peor resultado en el rango ±20%", fmt_clp(res[target].min()), border=True,
           help="Negocio + opciones si hay exposición; solo opciones si no la hay.")
 m4.metric("Mejor resultado en el rango ±20%", fmt_clp(res[target].max()), border=True,
@@ -236,14 +343,17 @@ with st.expander("Cómo leer el gráfico", icon=":material/help:"):
 with st.expander("Ejemplo: collar cero costo del importador", icon=":material/lightbulb:"):
     st.markdown(
         """
-Un importador debe pagar US\\$500.000. Compra una **call 2% sobre el spot** (techo) y para
-financiarla vende una **put 2% bajo el spot** (piso). Si las primas son iguales, el costo
-inicial es **cero**.
+Un importador debe pagar US\\$500.000. Compra una **call 2% sobre el spot** (techo) y,
+para financiarla, vende una **put** cuyo strike se elige de modo que **su prima pague
+exactamente la call**: el costo inicial es **cero** (mira la métrica "Prima neta").
 
 - Si el dólar **sube** sobre el techo: ejerce la call y paga como máximo el strike de la call.
 - Si el dólar **baja** bajo el piso: la contraparte ejerce la put y el importador debe comprar
   al strike de la put; **renuncia** a la baja adicional.
 - Entre ambos strikes: paga el spot de mercado.
+
+"Costo cero" no significa gratis: se paga renunciando a la baja bajo el piso. Si subes la
+volatilidad o el plazo, la banda cambia; si editas un strike, el costo deja de ser cero.
 
 Para el **exportador** es al revés: compra put (piso) y vende call (techo).
 """

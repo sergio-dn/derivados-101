@@ -5,6 +5,11 @@ forwards, opciones y estrategias compuestas. Basada en la planilla "Ejemplos Der
 (FAQ, Fwd, Options, Estrategia Compuesta, USDCLP). Audiencia: equipos de finanzas no
 especialistas y público general (posible post en LinkedIn). Todo en español neutro.
 
+**Alcance pedagógico (nivel básico).** La app es una base para alguien con finanzas básicas
+que quiere entender cómo OPERAN los derivados: quién paga a quién, cuándo, cuánto y qué riesgo
+queda. No es un curso de hedge accounting, economía financiera ni valuation: se prioriza la
+intuición operativa sobre las fórmulas, y el contenido avanzado se simplifica u oculta.
+
 **Reglas comunes**
 - Python 3.12 en `.venv` (ya creado: `.venv/bin/python`). No cambiar dependencias sin
   avisar en el reporte final. Sin scipy: usar `math.erf` para la normal.
@@ -30,6 +35,11 @@ especialistas y público general (posible post en LinkedIn). Todo en español ne
 
 `data/usdclp_dolar_observado.csv` — columnas `date` (YYYY-MM-DD), `usdclp` (float).
 Dólar observado oficial (BCCh) vía mindicador.cl, 2024-01-02 → 2026-11-02, 706 filas.
+
+`data/tasas_referencia.csv` — columnas `date` (YYYY-MM-DD, primer día del mes), `r_clp`, `r_usd`
+(decimales). Mensual desde 2023-01. Tasa interbancaria a 3 meses (OCDE vía FRED, series
+`IR3TIB01CLM156N` y `IR3TIB01USM156N`); meses faltantes arrastran el último valor. Se regenera con
+`scripts/update_rates.py`. Aproximación didáctica: no es la tasa que cotiza un banco.
 
 ## API del núcleo (`src/derivados101/`)
 
@@ -101,12 +111,20 @@ Exposure = Literal["none", "long_usd", "short_usd"]
 class StrategyPreset:
     key: str; name: str; description: str; objective: str
     suggested_exposure: Exposure
-    build: Callable[[float, float], list[OptionLeg]]   # (spot, premium_pct) -> legs
+    build: Callable[[float, float, float, float, float], list[OptionLeg]]
+    # (spot, vol, years, r_dom, r_for) -> legs; prima de cada pata = garman_kohlhagen (CLP por USD)
 
 PRESETS: dict[str, StrategyPreset]
 # mínimo: long_call, long_put, short_call, short_put, bull_call_spread, bear_put_spread,
-# collar_importer (long call + short put), collar_exporter (long put + short call),
-# straddle, strangle, seagull_importer. Strikes relativos al spot (ej. ±2%, ±5%).
+# collar_importer, collar_exporter, straddle, strangle, seagull_importer.
+# Strikes relativos al spot (ej. ±2%, ±5%). Collares de COSTO CERO: importador compra call
+# a spot·1,02 y vende put con strike resuelto (zero_cost_strike) para prima neta = 0;
+# exportador compra put a spot·0,98 y vende call resuelta. Gaviota: strikes fijos, NO es costo cero.
+
+def zero_cost_strike(kind, target_premium, spot, years, r_dom, r_for, vol,
+                     tol=1e-10, max_iter=200) -> float
+    # strike cuya prima GK = target_premium (bisección; kind = opción VENDIDA). ValueError si
+    # target_premium < 0, spot <= 0 o kind inválido.
 
 def strategy_pnl(legs, spots: np.ndarray, exposure: Exposure = "none",
                  spot0: float | None = None, exposure_usd: float = 1.0) -> pd.DataFrame
@@ -127,9 +145,17 @@ def fetch_usdclp_live(years: list[int], timeout=10.0, retries=3) -> pd.DataFrame
 def realized_vol(df, window: int = 21, periods: int = 252) -> pd.Series   # log-returns anualizados
 def horizon_changes(df, horizons_days=(21, 63, 126, 189, 252)) -> pd.DataFrame
     # distribución de variación % del USD/CLP a cada horizonte (min, p5, p50, p95, max, std)
-def hedge_backtest(df, start: date, years: float, r_dom: float, r_for: float,
-                   nominal_usd: float) -> dict
-    # "¿y si hubiera tomado un forward?" -> fwd_rate, spot_end, cost_unhedged, cost_hedged, compensation
+def latest_spot(live: bool = True, timeout: float = 5.0) -> tuple[float, date, str]
+    # (valor, fecha, fuente "mindicador.cl"|"csv"|"fijo"); nunca lanza
+RATES_CSV: Path      # data/tasas_referencia.csv
+def reference_rates(on: date | None = None) -> tuple[float, float, date]
+    # (r_clp, r_usd, fecha_fila): fila vigente en o antes de `on`; None = última; antes de la
+    # primera fila = la primera. Si el CSV falla: (0.0511, 0.0407, on o hoy) + warning. Nunca lanza.
+def hedge_backtest(df, start: date, years: float, nominal_usd: float,
+                   r_dom: float | None = None, r_for: float | None = None) -> dict
+    # "¿y si hubiera tomado un forward?". Tasas None -> reference_rates(start).
+    # keys: start_date, end_date, spot_start, fwd_rate, spot_end, cost_unhedged, cost_hedged,
+    # compensation, savings, r_dom, r_for
 def simulate_gbm(spot, vol, years, r_dom, r_for, n_paths=500, n_steps=252, seed=42) -> np.ndarray
     # shape (n_steps+1, n_paths), drift neutral al riesgo (r_dom - r_for)
 ```

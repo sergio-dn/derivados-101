@@ -15,6 +15,7 @@ from derivados101.market import (
     horizon_changes,
     load_usdclp,
     realized_vol,
+    reference_rates,
 )
 from derivados101.ui import (
     PAGES,
@@ -30,6 +31,8 @@ from derivados101.ui import (
 )
 
 HORIZON_LABELS = {21: "1 mes", 63: "3 meses", 126: "6 meses", 189: "9 meses", 252: "1 año"}
+MONTHS = ["enero", "febrero", "marzo", "abril", "mayo", "junio", "julio", "agosto", "septiembre",
+          "octubre", "noviembre", "diciembre"]
 SOURCE_LABELS = {"csv": "CSV incluido", "live": "Actualizar en vivo (mindicador.cl)"}
 
 info = next(p for p in PAGES if p.path.endswith("5_USDCLP.py"))
@@ -53,7 +56,8 @@ def _local():
 
 @st.cache_data(ttl=3600, show_spinner="Descargando desde mindicador.cl…")
 def _live(years: tuple[int, ...]):
-    return fetch_usdclp_live(list(years))
+    # Timeout corto y 2 intentos: si la API no responde, se cae al CSV en menos de ~10 s.
+    return fetch_usdclp_live(list(years), timeout=3.0, retries=2)
 
 
 st.session_state.setdefault("usd_source", "csv")
@@ -66,7 +70,19 @@ source = st.segmented_control(
 )
 if source == "live":
     df = _live(tuple(range(2024, date.today().year + 1)))
-    st.caption(":material/cloud_download: Si la descarga falla, se usa el CSV incluido.")
+    local = _local()
+    if df.empty or df.equals(local):
+        # fetch_usdclp_live nunca lanza: si falla devuelve el CSV. Si el resultado es idéntico
+        # al CSV, no llegó nada nuevo (o la descarga falló): se avisa en vez de fingir "en vivo".
+        last_local = f"{local['date'].iloc[-1]:%d-%m-%Y}" if not local.empty else "—"
+        st.warning(
+            "No se obtuvieron datos nuevos desde mindicador.cl (el servicio no respondió o no hay "
+            f"datos posteriores). Se muestran los datos incluidos en la app, hasta el {last_local}.",
+            icon=":material/cloud_off:",
+        )
+        df = local if df.empty else df
+    else:
+        st.caption(":material/cloud_done: Datos descargados desde mindicador.cl.")
 else:
     df = _local()
 
@@ -170,12 +186,12 @@ with tab_bt:
     st.markdown(
         "Un importador sabe en una fecha que deberá pagar dólares a cierto plazo. Compara "
         "comprar los dólares al spot del vencimiento contra haber fijado ese día un **forward teórico** "
-        "(paridad de tasas con las tasas supuestas, que puedes editar). No es el forward que cotizó el "
-        "mercado en esa fecha."
+        "(paridad de tasas con las tasas de referencia de **esa fecha**). No es el forward que cotizó "
+        "un banco ese día."
     )
     min_d = first["date"].date()
     with st.container(border=True):
-        c1, c2, c3, c4, c5 = st.columns(5)
+        c1, c2, c3 = st.columns(3)
         years = c2.select_slider("Plazo", options=[1 / 12, 0.25, 0.5, 0.75, 1.0], value=0.5,
                                  format_func=lambda y: f"{fmt_num(y * 12, 0)} meses", key="usd_bt_years")
         latest_start = max(min_d, (last["date"] - timedelta(days=round(years * 365))).date())
@@ -186,37 +202,62 @@ with tab_bt:
         st.session_state.setdefault("usd_bt_start", min_d)
         start = c1.date_input("Fecha de decisión", min_value=min_d, max_value=latest_start,
                               format="DD/MM/YYYY", key="usd_bt_start")
-        r_dom = c3.number_input("Tasa CLP supuesta (%)", 0.0, 30.0, 5.11, 0.05, format="%.2f",
-                                key="usd_bt_r_dom") / 100
-        r_for = c4.number_input("Tasa USD supuesta (%)", 0.0, 30.0, 4.07, 0.05, format="%.2f",
-                                key="usd_bt_r_for") / 100
-        nominal = c5.number_input("Nocional (USD)", 1_000.0, 50_000_000.0, 500_000.0, 10_000.0, format="%.0f",
+        nominal = c3.number_input("Nocional (USD)", 1_000.0, 50_000_000.0, 500_000.0, 10_000.0, format="%.0f",
                                   key="usd_bt_nominal")
+        try:
+            ref_dom, ref_for, ref_day = reference_rates(start)
+        except Exception:  # noqa: BLE001 - sin tasas de referencia, el usuario las ingresa
+            ref_dom, ref_for, ref_day = None, None, None
+        own = st.toggle("Usar mis propias tasas", key="usd_bt_own_rates", value=ref_dom is None,
+                        disabled=ref_dom is None,
+                        help="Por defecto se usan las tasas de referencia vigentes en la fecha de decisión.")
+        if own:
+            o1, o2 = st.columns(2)
+            r_dom = o1.number_input("Tasa CLP (%)", 0.0, 30.0,
+                                    round((ref_dom if ref_dom is not None else 0.0511) * 100, 2), 0.05,
+                                    format="%.2f", key="usd_bt_r_dom") / 100
+            r_for = o2.number_input("Tasa USD (%)", 0.0, 30.0,
+                                    round((ref_for if ref_for is not None else 0.0407) * 100, 2), 0.05,
+                                    format="%.2f", key="usd_bt_r_for") / 100
+        else:
+            r_dom = r_for = None
 
     try:
-        bt = hedge_backtest(df, start, years, r_dom, r_for, nominal)
+        bt = hedge_backtest(df, start, years, nominal, r_dom=r_dom, r_for=r_for)
     except ValueError as exc:
         st.warning(f"No se pudo calcular: {exc}", icon=":material/warning:")
     else:
+        if own:
+            rates_txt = "las tasas que ingresaste"
+        else:
+            rates_txt = (f"tasas de referencia: promedio de {MONTHS[ref_day.month - 1]} de {ref_day.year}"
+                         if ref_day else "tasas de referencia")
+        st.caption(
+            f":material/percent: Forward calculado con tasa CLP {fmt_pct(bt['r_dom'])} y tasa USD "
+            f"{fmt_pct(bt['r_for'])} ({rates_txt})."
+        )
         b1, b2, b3, b4 = st.columns(4)
         b1.metric(f"Spot al decidir ({bt['start_date']:%d-%m-%Y})", fmt_rate(bt["spot_start"]), border=True)
         b2.metric("Forward teórico", fmt_rate(bt["fwd_rate"]), border=True,
-                  help="Paridad de tasas con las tasas supuestas (inputs de arriba), no el forward que cotizó "
-                  "el mercado ese día.")
+                  help="Paridad de tasas: spot × (1 + tasa CLP)^plazo / (1 + tasa USD)^plazo. No es el "
+                  "forward que cotizó un banco ese día.")
         b3.metric(f"Spot al vencimiento ({bt['end_date']:%d-%m-%Y})", fmt_rate(bt["spot_end"]), border=True)
+        comp_pos = bt["compensation"] >= 0
         b4.metric("Compensación del forward", fmt_clp(bt["compensation"]), border=True,
-                  delta="recibe" if bt["compensation"] >= 0 else "paga",
-                  delta_color="normal", delta_arrow="up" if bt["compensation"] >= 0 else "down")
+                  delta="recibe" if comp_pos else "paga",
+                  delta_color="green" if comp_pos else "red", delta_arrow="up" if comp_pos else "down")
         d1, d2, d3 = st.columns(3)
         d1.metric("Costo sin cobertura", fmt_clp(bt["cost_unhedged"]), border=True)
         d2.metric("Costo con forward teórico", fmt_clp(bt["cost_hedged"]), border=True)
+        sav_pos = bt["savings"] >= 0
         d3.metric("Diferencia ex post", fmt_clp(bt["savings"]), border=True,
-                  delta="la cobertura convino" if bt["savings"] >= 0 else "habría convenido no cubrirse",
-                  delta_color="normal", delta_arrow="up" if bt["savings"] >= 0 else "down")
+                  delta="la cobertura convino" if sav_pos else "habría convenido no cubrirse",
+                  delta_color="green" if sav_pos else "red", delta_arrow="up" if sav_pos else "down")
         st.caption(
-            "Tasas constantes para todo el período (simplificación: en la realidad se usarían las "
-            "tasas vigentes en la fecha de decisión). Que la cobertura haya 'perdido' ex post no la "
-            "hace una mala decisión: su objetivo era eliminar la incertidumbre."
+            "Aproximación: las tasas de referencia son tasas interbancarias a 3 meses (en pesos y en "
+            "dólares) vigentes en la fecha de decisión. Un banco cotiza el forward con su propio margen, "
+            "así que el precio real habría sido algo peor para la empresa. Que la cobertura haya "
+            "'perdido' ex post no la hace una mala decisión: su objetivo era eliminar la incertidumbre."
         )
 
 disclaimer(current="5_USDCLP.py")

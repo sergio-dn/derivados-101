@@ -28,7 +28,11 @@ def test_page_runs_without_exception(page: str) -> None:
 
 
 def test_forward_default_matches_spreadsheet() -> None:
+    """Con los datos de la planilla original (spot 890, 5,11% / 4,07%, 1 año) el forward es 898,89."""
     at = _run("app_pages/2_Forward.py")
+    at.number_input(key="fwd_spot").set_value(890.0)
+    at.number_input(key="fwd_r_dom").set_value(5.11)
+    at.number_input(key="fwd_r_for").set_value(4.07).run()
     values = {m.label: m.value for m in at.metric}
     assert values["Forward a plazo"] == "898,89"
 
@@ -67,7 +71,7 @@ def test_quiz_perfect_score() -> None:
     correct = [opts[c] for _, opts, c, _ in _questions()]
     for radio, ans in zip(at.radio, correct, strict=True):
         radio.set_value(ans)
-    at.button[0].click().run()
+    at.button(key="quiz_check").click().run()
     assert not at.exception
     assert any(m.value == f"{len(correct)} / {len(correct)}" for m in at.metric)
 

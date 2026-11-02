@@ -27,9 +27,8 @@ from .options import (
     OptionKind,
     OptionLeg,
     Position,
-    intrinsic_value,
+    garman_kohlhagen,
     leg_pnl,
-    premium_from_pct,
 )
 
 __all__ = [
@@ -40,9 +39,13 @@ __all__ = [
     "net_premium",
     "spot_grid",
     "strategy_pnl",
+    "zero_cost_strike",
 ]
 
 Exposure = Literal["none", "long_usd", "short_usd"]
+
+# Firma de ``build``: (spot, vol, years, r_dom, r_for) -> patas con prima GK.
+BuildFn = Callable[[float, float, float, float, float], list[OptionLeg]]
 
 
 @dataclass(frozen=True)
@@ -55,8 +58,11 @@ class StrategyPreset:
         description: cómo se arma (qué patas lleva).
         objective: para qué sirve y quién la usaría.
         suggested_exposure: exposición del negocio con la que tiene sentido.
-        build: función ``(spot, premium_pct) -> list[OptionLeg]``. Los strikes
-            se fijan relativos al spot (ej. ±2%, ±5%).
+        build: función ``(spot, vol, years, r_dom, r_for) -> list[OptionLeg]``.
+            Los strikes se fijan relativos al spot (ej. ±2%, ±5%) y cada prima
+            es el precio teórico de Garman-Kohlhagen en CLP por USD. En los
+            collares, el strike de la pata vendida se resuelve para que la
+            prima neta sea cero (ver :func:`zero_cost_strike`).
     """
 
     key: str
@@ -64,7 +70,7 @@ class StrategyPreset:
     description: str
     objective: str
     suggested_exposure: Exposure
-    build: Callable[[float, float], list[OptionLeg]]
+    build: BuildFn
 
 
 # --------------------------------------------------------------------------- #
@@ -72,45 +78,122 @@ class StrategyPreset:
 # --------------------------------------------------------------------------- #
 
 
-def _leg_premium(kind: OptionKind, spot: float, strike: float, premium_pct: float) -> float:
-    """Prima aproximada de una pata (CLP por USD), simplificación didáctica.
+def zero_cost_strike(
+    kind: OptionKind,
+    target_premium: float,
+    spot: float,
+    years: float,
+    r_dom: float,
+    r_for: float,
+    vol: float,
+    tol: float = 1e-10,
+    max_iter: int = 200,
+) -> float:
+    """Strike cuya prima Garman-Kohlhagen es igual a ``target_premium``.
 
-    ``premium_pct`` es la prima de una opción ATM como % del spot (igual que en
-    la planilla). Para no cobrar lo mismo por una opción lejana que por una
-    ATM, se ajusta así:
+    Sirve para armar un collar de costo cero: se compra una opción y se elige
+    el strike de la opción vendida para que su prima pague exactamente la
+    prima de la comprada (prima neta = 0).
 
-    - si está OTM a una distancia relativa ``x``: ``prima_ATM * max(0,25; 1 − 10·x)``
-      (2% OTM → 80% de la prima ATM; 5% OTM → 50%).
-    - si está ITM: ``prima_ATM + valor intrínseco``.
+    Cómo funciona (bisección): la prima de una put sube cuando sube el strike
+    y la de una call baja. Se busca un intervalo de strikes donde la prima
+    pase de estar bajo el objetivo a estar sobre él (ampliándolo si hace
+    falta) y se parte por la mitad hasta que el error relativo sea menor que
+    ``tol``. Siempre converge porque la prima es monótona en el strike.
 
-    No es un modelo de mercado: para precios teóricos usar
-    :func:`derivados101.options.garman_kohlhagen`.
+    Args:
+        kind: tipo de la opción VENDIDA (``"put"`` en el collar importador,
+            ``"call"`` en el exportador).
+        target_premium: prima a igualar, en CLP por USD (>= 0); normalmente
+            la prima de la opción comprada.
+        spot, years, r_dom, r_for, vol: mercado, igual que en
+            :func:`derivados101.options.garman_kohlhagen`.
+
+    Returns:
+        El strike en CLP por USD. Si ``target_premium`` es 0 (por ejemplo con
+        volatilidad 0), devuelve el borde donde la opción empieza a valer
+        algo (≈ el forward).
+
+    Raises:
+        ValueError: si ``kind`` no es call/put, si ``spot <= 0`` o si
+            ``target_premium < 0``.
     """
-    base = premium_from_pct(premium_pct, spot)
-    intrinsic = intrinsic_value(kind, spot, strike)
-    if intrinsic > 0:
-        return base + intrinsic
-    otm_dist = abs(strike / spot - 1.0)
-    return base * max(0.25, 1.0 - 10.0 * otm_dist)
+    if kind not in ("call", "put"):
+        raise ValueError(f"kind inválido: {kind!r}")
+    if spot <= 0:
+        raise ValueError("spot debe ser > 0")
+    if target_premium < 0:
+        raise ValueError("target_premium debe ser >= 0")
+
+    def gap(strike: float) -> float:
+        """Prima menos objetivo, orientada para que crezca con el strike."""
+        price = garman_kohlhagen(kind, spot, strike, years, r_dom, r_for, vol)
+        diff = price - target_premium
+        return diff if kind == "put" else -diff
+
+    lo, hi = spot * 0.5, spot * 1.5
+    # Ampliar el intervalo hasta encerrar la raíz (gap(lo) <= 0 < gap(hi)).
+    for _ in range(60):
+        if gap(lo) <= 0:
+            break
+        lo *= 0.5
+    for _ in range(60):
+        if gap(hi) > 0:
+            break
+        hi *= 2.0
+    for _ in range(max_iter):
+        mid = 0.5 * (lo + hi)
+        if gap(mid) > 0:
+            hi = mid
+        else:
+            lo = mid
+        if hi - lo <= tol * spot:
+            break
+    return 0.5 * (lo + hi)
 
 
-def _leg(kind: OptionKind, position: Position, spot: float, k_mult: float, pct: float) -> OptionLeg:
-    """Crea una pata con strike ``spot * k_mult`` y prima aproximada."""
-    strike = spot * k_mult
-    return OptionLeg(
-        kind=kind,
-        position=position,
-        strike=strike,
-        notional_usd=1.0,
-        premium=_leg_premium(kind, spot, strike, pct),
-    )
+def _gk_leg(
+    kind: OptionKind,
+    position: Position,
+    strike: float,
+    spot: float,
+    vol: float,
+    years: float,
+    r_dom: float,
+    r_for: float,
+) -> OptionLeg:
+    """Crea una pata con prima Garman-Kohlhagen (CLP por USD de nocional)."""
+    premium = garman_kohlhagen(kind, spot, strike, years, r_dom, r_for, vol)
+    return OptionLeg(kind=kind, position=position, strike=strike, notional_usd=1.0,
+                     premium=max(premium, 0.0))
 
 
-def _builder(*specs: tuple[OptionKind, Position, float]) -> Callable[[float, float], list[OptionLeg]]:
+def _builder(*specs: tuple[OptionKind, Position, float]) -> BuildFn:
     """Fabrica una función ``build`` a partir de (tipo, posición, multiplicador de strike)."""
 
-    def build(spot: float, premium_pct: float) -> list[OptionLeg]:
-        return [_leg(kind, pos, spot, mult, premium_pct) for kind, pos, mult in specs]
+    def build(spot: float, vol: float, years: float, r_dom: float, r_for: float) -> list[OptionLeg]:
+        return [_gk_leg(kind, pos, spot * mult, spot, vol, years, r_dom, r_for)
+                for kind, pos, mult in specs]
+
+    return build
+
+
+def _zero_cost_collar(bought: OptionKind, bought_mult: float) -> BuildFn:
+    """``build`` de un collar de costo cero.
+
+    Compra una opción ``bought`` con strike ``spot·bought_mult`` y vende la
+    opción contraria con el strike que hace que ambas primas sean iguales.
+    """
+    sold: OptionKind = "put" if bought == "call" else "call"
+
+    def build(spot: float, vol: float, years: float, r_dom: float, r_for: float) -> list[OptionLeg]:
+        long_leg = _gk_leg(bought, "long", spot * bought_mult, spot, vol, years, r_dom, r_for)
+        k_sold = zero_cost_strike(sold, long_leg.premium, spot, years, r_dom, r_for, vol)
+        # La prima de la vendida se fija igual a la comprada: así la prima neta
+        # es exactamente cero (la diferencia con GK es del orden de la tolerancia).
+        short_leg = OptionLeg(kind=sold, position="short", strike=k_sold, notional_usd=1.0,
+                              premium=long_leg.premium)
+        return [long_leg, short_leg]
 
     return build
 
@@ -171,21 +254,23 @@ _PRESET_LIST: list[StrategyPreset] = [
     ),
     StrategyPreset(
         key="collar_importer",
-        name="Collar importador",
-        description="Compro call 2% sobre el spot y vendo put 2% bajo el spot.",
-        objective="Importador fija una banda: techo y piso para el dólar. La prima de la put "
-        "vendida financia la call (costo cercano a cero).",
+        name="Collar importador (costo cero)",
+        description="Compro una call 2% sobre el spot y vendo una put cuyo strike se elige "
+        "para que su prima pague exactamente la call.",
+        objective="Importador fija una banda: techo para el dólar (la call) a cambio de "
+        "renunciar a las bajas bajo el strike de la put. No paga prima neta hoy.",
         suggested_exposure="short_usd",
-        build=_builder(("call", "long", 1.02), ("put", "short", 0.98)),
+        build=_zero_cost_collar("call", 1.02),
     ),
     StrategyPreset(
         key="collar_exporter",
-        name="Collar exportador",
-        description="Compro put 2% bajo el spot y vendo call 2% sobre el spot.",
-        objective="Exportador fija una banda para el dólar que recibirá. La call vendida "
-        "financia la put (costo cercano a cero).",
+        name="Collar exportador (costo cero)",
+        description="Compro una put 2% bajo el spot y vendo una call cuyo strike se elige "
+        "para que su prima pague exactamente la put.",
+        objective="Exportador fija una banda: piso para el dólar que recibirá (la put) a "
+        "cambio de renunciar a las alzas sobre el strike de la call. No paga prima neta hoy.",
         suggested_exposure="long_usd",
-        build=_builder(("put", "long", 0.98), ("call", "short", 1.02)),
+        build=_zero_cost_collar("put", 0.98),
     ),
     StrategyPreset(
         key="straddle",
@@ -210,7 +295,8 @@ _PRESET_LIST: list[StrategyPreset] = [
         name="Gaviota (seagull) importador",
         description="Compro call 2% arriba, vendo call 7% arriba y vendo put 3% abajo.",
         objective="Importador abarata la protección: techo entre +2% y +7%, renuncia a "
-        "bajas bajo −3%. Sobre +7% vuelve a quedar expuesto.",
+        "bajas bajo −3%. Sobre +7% vuelve a quedar expuesto. Strikes fijos: la prima "
+        "neta no es cero (puede ser un pago o un cobro según tasas y volatilidad).",
         suggested_exposure="short_usd",
         build=_builder(("call", "long", 1.02), ("call", "short", 1.07), ("put", "short", 0.97)),
     ),

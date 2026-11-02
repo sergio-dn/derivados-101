@@ -87,20 +87,74 @@ def test_horizon_changes(df):
 
 
 def test_hedge_backtest(df):
-    res = market.hedge_backtest(df, date(2024, 1, 2), 1.0, 0.0511, 0.0407, 500_000)
+    res = market.hedge_backtest(df, date(2024, 1, 2), 1.0, 500_000, r_dom=0.0511, r_for=0.0407)
     assert res["start_date"] == date(2024, 1, 2)
     assert res["spot_start"] == pytest.approx(877.12)
     assert res["end_date"] >= date(2025, 1, 1)
     assert res["fwd_rate"] == pytest.approx(forward_rate(877.12, 0.0511, 0.0407, 1.0))
     assert res["cost_unhedged"] == pytest.approx(500_000 * res["spot_end"])
     assert res["cost_hedged"] == pytest.approx(500_000 * res["fwd_rate"])
+    assert (res["r_dom"], res["r_for"]) == (0.0511, 0.0407)
     # compensación (buy) = ahorro de la cobertura
     assert res["compensation"] == pytest.approx(res["savings"])
 
 
+def test_hedge_backtest_uses_historical_rates_by_default(df):
+    r_clp, r_usd, when = market.reference_rates(date(2024, 1, 2))
+    assert when == date(2024, 1, 1)
+    res = market.hedge_backtest(df, date(2024, 1, 2), 1.0, 500_000)
+    assert (res["r_dom"], res["r_for"]) == (r_clp, r_usd)
+    assert res["fwd_rate"] == pytest.approx(forward_rate(877.12, r_clp, r_usd, 1.0))
+    # a inicios de 2024 la tasa CLP era bastante mayor que la USD
+    assert r_clp > r_usd
+    # se puede fijar solo una de las dos tasas
+    only_dom = market.hedge_backtest(df, date(2024, 1, 2), 1.0, 1, r_dom=0.05)
+    assert (only_dom["r_dom"], only_dom["r_for"]) == (0.05, r_usd)
+
+
 def test_hedge_backtest_out_of_range(df):
     with pytest.raises(ValueError):
-        market.hedge_backtest(df, date(2026, 6, 1), 1.0, 0.05, 0.04, 1)
+        market.hedge_backtest(df, date(2026, 6, 1), 1.0, 1, r_dom=0.05, r_for=0.04)
+
+
+# --- Tasas de referencia --------------------------------------------------- #
+
+
+def test_rates_csv_shape():
+    rates = market._load_rates()
+    assert list(rates.columns) == ["date", "r_clp", "r_usd"]
+    assert rates["date"].iloc[0] == pd.Timestamp("2023-01-01")
+    assert rates["date"].is_monotonic_increasing and rates["date"].is_unique
+    assert (rates["date"].dt.day == 1).all()
+    # mensual y sin huecos
+    assert len(rates) == len(pd.date_range(rates["date"].iloc[0], rates["date"].iloc[-1], freq="MS"))
+    # decimales razonables (no porcentajes)
+    assert rates["r_clp"].between(0.0, 0.2).all() and rates["r_usd"].between(0.0, 0.1).all()
+
+
+def test_reference_rates_edges():
+    rates = market._load_rates()
+    last = rates.iloc[-1]
+    assert market.reference_rates() == (last["r_clp"], last["r_usd"], last["date"].date())
+    # fecha intermedia: fila vigente en o antes
+    r_clp, r_usd, when = market.reference_rates(date(2024, 6, 30))
+    assert when == date(2024, 6, 1)
+    row = rates[rates["date"] == pd.Timestamp("2024-06-01")].iloc[0]
+    assert (r_clp, r_usd) == (row["r_clp"], row["r_usd"])
+    # exactamente el primer día del mes
+    assert market.reference_rates(date(2024, 7, 1))[2] == date(2024, 7, 1)
+    # antes de la primera fila: la primera
+    first = rates.iloc[0]
+    assert market.reference_rates(date(2010, 1, 1)) == (
+        first["r_clp"], first["r_usd"], first["date"].date())
+    # en el futuro: la última
+    assert market.reference_rates(date(2099, 1, 1))[2] == last["date"].date()
+
+
+def test_reference_rates_without_csv(monkeypatch, tmp_path, capture_warnings):
+    monkeypatch.setattr(market, "RATES_CSV", tmp_path / "no_existe.csv")
+    assert market.reference_rates(date(2024, 1, 1)) == (0.0511, 0.0407, date(2024, 1, 1))
+    assert any(r.levelno == logging.WARNING for r in capture_warnings.records)
 
 
 def test_simulate_gbm():
@@ -174,3 +228,51 @@ def test_fetch_live_never_raises_even_without_csv(monkeypatch, no_sleep, tmp_pat
     monkeypatch.setattr(market, "DEFAULT_CSV", tmp_path / "no_existe.csv")
     out = market.fetch_usdclp_live([2024], retries=1)
     assert out.empty and list(out.columns) == ["date", "usdclp"]
+
+
+# --- latest_spot ----------------------------------------------------------- #
+
+
+def test_latest_spot_live(monkeypatch):
+    def handler(request):
+        assert str(request.url) == "https://mindicador.cl/api/dolar"
+        return httpx.Response(200, json={"serie": [
+            {"fecha": "2026-11-02T03:00:00.000Z", "valor": 950.5},
+            {"fecha": "2026-10-31T03:00:00.000Z", "valor": 949.0},
+        ]})
+
+    _mock_client(monkeypatch, handler)
+    assert market.latest_spot() == (950.5, date(2026, 11, 2), "mindicador.cl")
+
+
+@pytest.mark.parametrize(
+    "handler",
+    [
+        lambda r: httpx.Response(500),
+        lambda r: httpx.Response(200, content=b""),  # respuesta vacía (caso real de mindicador)
+        lambda r: httpx.Response(200, json={"serie": []}),
+        lambda r: (_ for _ in ()).throw(httpx.RemoteProtocolError("desconectado")),
+    ],
+    ids=["http_500", "cuerpo_vacio", "serie_vacia", "desconecta"],
+)
+def test_latest_spot_falls_back_to_csv(monkeypatch, handler, df):
+    _mock_client(monkeypatch, handler)
+    value, when, source = market.latest_spot()
+    assert source == "csv"
+    assert value == pytest.approx(df["usdclp"].iloc[-1])
+    assert when == df["date"].iloc[-1].date()
+
+
+def test_latest_spot_offline_does_not_call_network(monkeypatch, df):
+    def handler(request):  # pragma: no cover - no debe llamarse
+        raise AssertionError("no debía consultar la red")
+
+    _mock_client(monkeypatch, handler)
+    assert market.latest_spot(live=False)[2] == "csv"
+
+
+def test_latest_spot_last_resort(monkeypatch, tmp_path, capture_warnings):
+    _mock_client(monkeypatch, lambda r: httpx.Response(500))
+    monkeypatch.setattr(market, "DEFAULT_CSV", tmp_path / "no_existe.csv")
+    value, _, source = market.latest_spot()
+    assert (value, source) == (900.0, "fijo")

@@ -21,6 +21,9 @@ from derivados101.ui import (
     PAGES,
     PALETTE,
     disclaimer,
+    example_rates,
+    example_spot,
+    example_spot_note,
     fmt_clp,
     fmt_num,
     fmt_pct,
@@ -43,10 +46,12 @@ page_setup(
 
 learn_box(
     "Un forward es la **obligación** de comprar (o vender) dólares en una fecha futura a un "
-    "precio fijado hoy. Vas a ver de dónde sale ese precio (los *puntos forward* no son una "
-    "apuesta del banco: salen del diferencial de tasas), cómo se liquida al vencimiento y "
-    "por qué su valor (MtM) se mueve antes de vencer."
+    "precio que fijas hoy. Vas a ver 3 cosas: de dónde sale ese precio, cómo se paga al "
+    "vencimiento y por qué el banco puede pedirte caja antes de que el contrato venza."
 )
+
+EX_SPOT = float(round(example_spot()[0]))
+EX_R_CLP, EX_R_USD, EX_RATES_DAY = example_rates()
 
 # ------------------------------------------------------------------ inputs
 SIDE_LABELS = {
@@ -56,14 +61,18 @@ SIDE_LABELS = {
 
 with st.container(border=True):
     st.subheader("Parámetros del contrato", icon=":material/tune:")
-    st.caption("Por defecto, el ejemplo de la planilla. Cambia cualquier valor y todo se recalcula.")
+    st.caption("Cambia cualquier valor y todo se recalcula.")
     c1, c2, c3, c4, c5 = st.columns(5)
     nominal = c1.number_input(
         "Nocional (USD)", 1_000.0, 100_000_000.0, 500_000.0, 10_000.0, format="%.0f", key="fwd_nominal"
     )
-    spot = c2.number_input("Spot hoy (CLP/USD)", 300.0, 2_000.0, 890.0, 1.0, format="%.2f", key="fwd_spot")
-    r_dom = c3.number_input("Tasa CLP anual (%)", 0.0, 30.0, 5.11, 0.05, format="%.2f", key="fwd_r_dom") / 100
-    r_for = c4.number_input("Tasa USD anual (%)", 0.0, 30.0, 4.07, 0.05, format="%.2f", key="fwd_r_for") / 100
+    spot = c2.number_input("Spot hoy (CLP/USD)", 300.0, 2_000.0, EX_SPOT, 1.0, format="%.2f", key="fwd_spot")
+    r_dom = c3.number_input(
+        "Tasa CLP anual (%)", 0.0, 30.0, round(EX_R_CLP * 100, 2), 0.05, format="%.2f", key="fwd_r_dom"
+    ) / 100
+    r_for = c4.number_input(
+        "Tasa USD anual (%)", 0.0, 30.0, round(EX_R_USD * 100, 2), 0.05, format="%.2f", key="fwd_r_for"
+    ) / 100
     years = c5.number_input("Plazo (años)", 0.05, 5.0, 1.0, 0.05, format="%.2f", key="fwd_years")
     side = st.segmented_control(
         "¿Qué necesita la empresa?",
@@ -72,6 +81,15 @@ with st.container(border=True):
         default="buy",
         required=True,
         key="fwd_side",
+    )
+    example_spot_note()
+    rates_origin = (
+        "las del ejemplo de la planilla original" if EX_RATES_DAY == "planilla"
+        else f"tasas de referencia al {EX_RATES_DAY}"
+    )
+    st.caption(
+        f":material/percent: Tasas por defecto: {rates_origin} ({fmt_pct(EX_R_CLP)} en pesos y "
+        f"{fmt_pct(EX_R_USD)} en dólares). Son un ejemplo; tu banco cotiza con sus propias tasas y margen."
     )
 
 fwd = forward_rate(spot, r_dom, r_for, years)
@@ -146,8 +164,8 @@ with tab_price:
 with tab_settle:
     st.subheader("Al vencimiento: entrega física vs compensación")
     st.markdown(
-        "Mueve el dólar del día de vencimiento. Fíjate que el **resultado económico es el mismo** en "
-        "ambas modalidades; lo que cambia es qué flujo de caja se mueve."
+        "Mueve el dólar del día de vencimiento. El resultado económico es el mismo en las dos "
+        "modalidades. Lo que cambia es cuánta plata se mueve ese día y entre quiénes."
     )
     spot_T = st.slider(
         "Spot al vencimiento (CLP/USD)",
@@ -175,8 +193,9 @@ with tab_settle:
     with cards, st.container(border=True, height="stretch"):
         st.markdown("**:material/swap_horiz: Compensación (non delivery)**")
         st.markdown(
-            "No se intercambian dólares: solo se paga la **diferencia** entre el precio pactado y el "
-            "spot del día. La empresa compra o vende sus USD en el mercado como siempre."
+            "No se intercambian dólares. Solo se paga la **diferencia** entre el precio pactado y el "
+            "spot del día. La empresa compra o vende sus USD en el mercado como siempre, y la "
+            "compensación le deja el mismo costo final que con entrega física."
         )
         comp = stl.compensation_clp
         st.metric(
@@ -198,7 +217,7 @@ with tab_settle:
             f"{fmt_num(nominal)} × {fmt_num(diff, 2)} = **{md_clp(stl.compensation_clp)}**."
         )
         st.markdown(
-            "**Segundo ejemplo (caso de la planilla original):** compra de US\\$500.000 a un forward "
+            "**Otro ejemplo, con cifras fijas de la planilla original:** compra de US\\$500.000 a un forward "
             "de 948,91 y spot final 900 → C = 500.000 × (900 − 948,91) = "
             f"**{md_clp(500_000 * (900 - 948.91))}** (la empresa paga). Ese 948,91 corresponde a "
             "otro spot inicial; sus puntos deben recalcularse con la fórmula, no heredarse."
@@ -232,16 +251,11 @@ with tab_settle:
 
 # ------------------------------------------------------------------ 3. MtM
 with tab_mtm:
-    st.subheader("Antes de vencer: Mark-to-Market")
+    st.subheader("Antes de vencer: cuánto vale cerrar hoy el contrato")
     st.markdown(
-        "Entre hoy y el vencimiento el contrato tiene un **valor de mercado**: lo que costaría o "
-        "rendiría cerrarlo hoy."
-    )
-    st.warning(
-        "Si es negativo para la empresa, el banco puede pedir **garantías** o usar la **línea de "
-        "crédito** de la empresa, aunque el flujo cubierto todavía no ocurra.",
-        title="Un MtM negativo puede exigir caja o línea",
-        icon=":material/account_balance:",
+        "El MtM (*mark-to-market*) es cuánto valdría cerrar hoy el contrato. Dicho simple: cuánto le "
+        "debes al banco, o cuánto te debe él, si terminaran todo hoy. Se calcula todos los días, "
+        "aunque nadie pague nada hasta el vencimiento."
     )
 
     left, right = st.columns([1, 2], gap="medium")
@@ -254,7 +268,7 @@ with tab_mtm:
             "Spot en esa fecha (CLP/USD)",
             min_value=float(round(spot * 0.8)),
             max_value=float(round(spot * 1.2)),
-            value=float(round(spot * 1.03)),
+            value=float(round(spot * 0.97)),
             step=1.0,
             format="%.0f",
             key="fwd_spot_t",
@@ -286,6 +300,62 @@ with tab_mtm:
             "En el mes 0, con el spot de hoy, el MtM es cero: un forward a precio de mercado no cuesta "
             "nada al firmarlo (sin contar el margen del banco). Al vencimiento, el MtM es igual a la "
             "compensación."
+        )
+
+    # Ejemplo en pesos con el escenario elegido.
+    action = "comprar" if side == "buy" else "vender"
+    with st.container(border=True):
+        st.markdown("**:material/receipt_long: Tu ejemplo en pesos**")
+        st.markdown(
+            f"Firmaste {action} {md_usd(nominal)} a {fmt_rate(fwd)}. Pasaron {elapsed} meses y el dólar "
+            f"está en {fmt_rate(spot_t)}. Hoy, un forward nuevo a la misma fecha de vencimiento se "
+            f"pactaría a {fmt_rate(f_t)}."
+        )
+        if mtm < 0:
+            st.markdown(
+                f"Tu contrato quedó peor que el de mercado. Si lo cerraras hoy, le pagarías al banco "
+                f"**{md_clp(-mtm)}**. Ese es tu MtM: {md_clp(mtm)}."
+            )
+        elif mtm > 0:
+            st.markdown(
+                f"Tu contrato quedó mejor que el de mercado. Si lo cerraras hoy, el banco te pagaría "
+                f"**{md_clp(mtm)}**. Ese es tu MtM."
+            )
+        else:
+            st.markdown("Tu contrato vale lo mismo que uno nuevo: el MtM es cero.")
+
+    st.subheader("Por qué el banco te puede pedir caja antes del vencimiento")
+    st.markdown(
+        f"""
+Cuando el MtM está en tu contra, el banco corre un riesgo: que al vencimiento no le pagues. Para
+cubrirse usa uno de estos 2 mecanismos, según lo que hayas firmado con él:
+
+1. Consume tu **línea de crédito**. El monto en contra (más un colchón) se descuenta de la línea
+   que el banco te asignó. Esa línea queda más chica para otros créditos, como financiar
+   importaciones o capital de trabajo.
+2. Te pide **garantías**: depositar caja o documentos mientras el MtM siga en contra. Cuando el
+   dólar vuelve o el contrato vence, la garantía se libera.
+
+La cobertura funciona igual: lo que pierde el forward lo gana tu negocio, porque tus dólares
+{"se abaratan" if side == "buy" else "valen más"}. El problema es el calendario. La pérdida del
+forward se mide hoy y la ganancia del negocio llega al vencimiento. Por eso, antes de cubrirte,
+mira 2 cosas: cuánta línea tienes con el banco y cuánta caja aguantas si el dólar se mueve en contra.
+"""
+    )
+    if mtm < 0:
+        st.warning(
+            f"En tu escenario el banco ve {md_clp(-mtm)} en tu contra. Si te pidiera garantía por ese "
+            "monto, esa caja sale hoy, aunque el pago cubierto todavía no ocurra.",
+            title="Efecto en caja de tu escenario",
+            icon=":material/account_balance:",
+        )
+    else:
+        st.info(
+            "En tu escenario el MtM está a tu favor. Lo normal es que el banco no te pague antes del "
+            "vencimiento: ahora el riesgo de crédito lo tienes tú con el banco. Mueve el spot en tu "
+            "contra para ver el otro caso.",
+            title="Efecto en caja de tu escenario",
+            icon=":material/account_balance:",
         )
 
     with st.expander("Fórmula del MtM", icon=":material/functions:"):

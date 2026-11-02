@@ -7,7 +7,17 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 import streamlit as st
 
-from derivados101.ui import PAGES, disclaimer, learn_box, page_setup, section
+from derivados101.ui import (
+    PAGES,
+    disclaimer,
+    example_spot,
+    fmt_num,
+    learn_box,
+    md_clp,
+    md_usd,
+    page_setup,
+    section,
+)
 
 page_setup(
     "Derivados 101: cubrirse del dólar sin ser trader",
@@ -26,6 +36,10 @@ learn_box(
     "recorrer esta app. No necesitas saber nada de finanzas: cada página tiene sliders "
     "para que veas qué pasa con los números cuando cambia el dólar."
 )
+st.caption(
+    ":material/info: Es una introducción práctica a cómo operan los derivados (quién paga a quién, "
+    "cuándo y cuánto). No es asesoría financiera ni un curso de contabilidad o de valorización."
+)
 
 if st.button(
     "Empezar por Conceptos",
@@ -37,15 +51,25 @@ if st.button(
     st.switch_page(PAGES[1].path)
 
 section("¿Qué es un derivado?", icon=":material/help:")
+
+# Ejemplo del importador con el dólar de ejemplo (último observado) y una subida redonda ~12%.
+NOMINAL_USD = 500_000
+spot_ex, spot_day, _source = example_spot()
+spot_ex = round(spot_ex)
+spot_up = round(spot_ex * 1.12 / 50) * 50  # valor redondo (múltiplo de 50) ≈ 12% arriba
+extra_cost = NOMINAL_USD * (spot_up - spot_ex)
+extra_mm = fmt_num(extra_cost / 1e6, 0 if extra_cost % 1_000_000 == 0 else 1)
+
 st.markdown(
-    """
+    f"""
 Un **derivado** es un contrato cuyo valor *deriva* de otra cosa: el **subyacente**
 (acá, el tipo de cambio USD/CLP). El contrato no es el dólar en sí; es un acuerdo sobre
 **a qué precio** se va a comprar o vender dólares en una fecha futura, o sobre el
 **derecho** a hacerlo.
 
-Piensa en un **importador chileno** que debe pagar US\\$500.000 a su proveedor en un año.
-Hoy el dólar está en \\$890. Si en un año sube a \\$1.000, la factura le cuesta \\$55 millones
+Piensa en un **importador chileno** que debe pagar {md_usd(NOMINAL_USD)} a su proveedor en un
+año. Como ejemplo, toma el dólar observado al {spot_day}: {md_clp(spot_ex)}. Si en un año sube
+a {md_clp(spot_up)}, la factura le cuesta \\${extra_mm} millones
 más de lo presupuestado. Un derivado le permite **fijar hoy** (forward) o **ponerle techo**
 (opción) a ese precio.
 """

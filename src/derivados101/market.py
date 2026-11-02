@@ -24,14 +24,19 @@ __all__ = [
     "fetch_usdclp_live",
     "hedge_backtest",
     "horizon_changes",
+    "latest_spot",
     "load_usdclp",
     "realized_vol",
+    "reference_rates",
     "simulate_gbm",
 ]
 
 logger = get_logger(__name__)
 
 DEFAULT_CSV: Path = Path(__file__).resolve().parents[2] / "data" / "usdclp_dolar_observado.csv"
+RATES_CSV: Path = Path(__file__).resolve().parents[2] / "data" / "tasas_referencia.csv"
+# Último recurso si no se puede leer el CSV de tasas (ejemplo de la planilla original).
+_FALLBACK_RATES = (0.0511, 0.0407)
 _API_URL = "https://mindicador.cl/api/dolar/{year}"
 _COLUMNS = ["date", "usdclp"]
 
@@ -111,6 +116,36 @@ def fetch_usdclp_live(years: list[int], timeout: float = 10.0, retries: int = 3)
                                  "usdclp": pd.Series(dtype=float)})
 
 
+_LATEST_URL = "https://mindicador.cl/api/dolar"
+
+
+def latest_spot(live: bool = True, timeout: float = 5.0) -> tuple[float, date, str]:
+    """Último dólar observado disponible, para usarlo como valor de ejemplo en la app.
+
+    Si ``live`` es True intenta mindicador.cl (un intento, timeout corto); si falla o
+    ``live`` es False, usa el último dato del CSV local. Nunca lanza excepciones: como
+    último recurso devuelve 900,0 con fuente ``"fijo"``.
+
+    Devuelve ``(valor, fecha, fuente)`` con fuente ``"mindicador.cl"``, ``"csv"`` o ``"fijo"``.
+    """
+    if live:
+        try:
+            with _make_client(timeout) as client:
+                resp = client.get(_LATEST_URL)
+                resp.raise_for_status()
+                item = resp.json()["serie"][0]
+                return float(item["valor"]), date.fromisoformat(item["fecha"][:10]), "mindicador.cl"
+        except Exception as exc:  # noqa: BLE001 - la UI nunca debe recibir excepciones
+            logger.info("No se pudo obtener el dólar en vivo (%s); se usa el CSV.", type(exc).__name__)
+    try:
+        df = load_usdclp()
+        last = df.iloc[-1]
+        return float(last["usdclp"]), last["date"].date(), "csv"
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("Tampoco se pudo leer el CSV local (%s).", exc)
+        return 900.0, date.today(), "fijo"
+
+
 def realized_vol(df: pd.DataFrame, window: int = 21, periods: int = 252) -> pd.Series:
     """Volatilidad realizada anualizada (ventana móvil).
 
@@ -160,13 +195,56 @@ def horizon_changes(
     return pd.DataFrame(rows, columns=["horizon_days", "n", "min", "p5", "p50", "p95", "max", "std"])
 
 
+def _load_rates(path: Path | None = None) -> pd.DataFrame:
+    """Lee el CSV de tasas de referencia (date, r_clp, r_usd), ordenado por fecha."""
+    df = pd.read_csv(path or RATES_CSV)
+    df["date"] = pd.to_datetime(df["date"])
+    df["r_clp"] = pd.to_numeric(df["r_clp"], errors="coerce")
+    df["r_usd"] = pd.to_numeric(df["r_usd"], errors="coerce")
+    df = df.dropna().drop_duplicates(subset="date", keep="last")
+    return df.sort_values("date").reset_index(drop=True)
+
+
+def reference_rates(on: date | None = None) -> tuple[float, float, date]:
+    """Tasas de referencia CLP y USD vigentes en una fecha (aproximación didáctica).
+
+    Lee ``data/tasas_referencia.csv`` (mensual, generado por
+    ``scripts/update_rates.py`` desde FRED): tasa interbancaria a 3 meses de
+    Chile y de EE.UU., promedio del mes, en decimales. No es la tasa que
+    cotiza un banco para un forward; sirve para que los ejemplos usen tasas
+    "de la época" y no números fijos.
+
+    Reglas:
+        - ``on`` es ``None`` → última fila disponible.
+        - si no → la fila más reciente con fecha en o antes de ``on``.
+        - ``on`` anterior a la primera fila → la primera fila.
+
+    Devuelve ``(r_clp, r_usd, fecha_de_la_fila)``. Nunca lanza excepciones:
+    si el CSV no se puede leer, registra un warning y devuelve las tasas de
+    la planilla original (5,11% / 4,07%) con la fecha ``on`` (o hoy).
+    """
+    try:
+        rates = _load_rates()
+        if rates.empty:
+            raise ValueError("CSV de tasas vacío")
+        if on is None:
+            row = rates.iloc[-1]
+        else:
+            valid = rates[rates["date"] <= pd.Timestamp(on)]
+            row = valid.iloc[-1] if not valid.empty else rates.iloc[0]
+        return float(row["r_clp"]), float(row["r_usd"]), row["date"].date()
+    except Exception as exc:  # noqa: BLE001 - la UI nunca debe recibir excepciones
+        logger.warning("No se pudieron leer las tasas de referencia (%s); se usan fijas.", exc)
+        return _FALLBACK_RATES[0], _FALLBACK_RATES[1], on or date.today()
+
+
 def hedge_backtest(
     df: pd.DataFrame,
     start: date,
     years: float,
-    r_dom: float,
-    r_for: float,
     nominal_usd: float,
+    r_dom: float | None = None,
+    r_for: float | None = None,
 ) -> dict:
     """"¿Y si hubiera tomado un forward?": backtest para un importador.
 
@@ -174,19 +252,27 @@ def hedge_backtest(
     dentro de ``years`` años. Compara:
 
     - sin cobertura: compra los USD al spot del vencimiento.
-    - con cobertura: fija hoy un forward de compra calculado con las tasas dadas
-      (las mismas para todo el período: simplificación).
+    - con cobertura: fija hoy un forward de compra calculado con las tasas
+      ``r_dom`` (CLP) y ``r_for`` (USD). Si alguna es ``None`` se usa la tasa
+      de referencia vigente en ``start`` (:func:`reference_rates`), así el
+      forward refleja las tasas de esa época y no las de hoy.
 
     Fechas: se usa el primer dato disponible desde ``start`` y desde
     ``start + years·365 días``.
 
     Devuelve: start_date, end_date, spot_start, fwd_rate, spot_end,
     cost_unhedged, cost_hedged, compensation (desde la empresa: positivo = la
-    empresa RECIBE del banco; negativo = la empresa PAGA al banco) y savings (cost_unhedged − cost_hedged; positivo = la cobertura
-    convino *ex post*, lo que no significa que haya sido "mejor decisión").
+    empresa RECIBE del banco; negativo = la empresa PAGA al banco), savings
+    (cost_unhedged − cost_hedged; positivo = la cobertura convino *ex post*, lo
+    que no significa que haya sido "mejor decisión"), r_dom y r_for (las tasas
+    efectivamente usadas).
 
     Lanza ``ValueError`` si no hay datos para el inicio o el vencimiento.
     """
+    if r_dom is None or r_for is None:
+        ref_dom, ref_for, _ = reference_rates(start)
+        r_dom = ref_dom if r_dom is None else r_dom
+        r_for = ref_for if r_for is None else r_for
     data = _clean(df)
     start_ts = pd.Timestamp(start)
     end_ts = start_ts + timedelta(days=round(years * 365))
@@ -211,6 +297,8 @@ def hedge_backtest(
         "cost_hedged": cost_hedged,
         "compensation": settlement.compensation_clp,
         "savings": cost_unhedged - cost_hedged,
+        "r_dom": float(r_dom),
+        "r_for": float(r_for),
     }
 
 

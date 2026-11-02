@@ -12,12 +12,12 @@ from derivados101.ui import PAGES, disclaimer, learn_box, page_setup, section
 page_setup(
     "Quiz: ¿quedó claro?",
     icon=PAGES[-1].icon,
-    subtitle="Diez preguntas cortas sobre forwards, opciones y su contabilización.",
+    subtitle="Diez preguntas cortas sobre cómo operan los forwards y las opciones.",
 )
 
 learn_box(
-    "Diez preguntas para comprobar lo aprendido. Responde todas y presiona **Revisar**: "
-    "cada respuesta trae su explicación."
+    "Diez preguntas para comprobar lo aprendido. La barra avanza a medida que respondes; "
+    "al final presiona **Revisar**: cada respuesta trae su explicación."
 )
 
 # (pregunta, opciones, índice correcto, explicación)
@@ -29,14 +29,16 @@ QUESTIONS: list[tuple[str, list[str], int, str]] = [
         "Su riesgo es que el dólar suba (pagará más pesos). Comprar USD a plazo fija el precio.",
     ),
     (
-        "Con tasa en pesos 5,11% y en dólares 4,07%, el forward a 1 año con spot 890 está…",
+        "Ejemplo fijo: con spot 890 y tasas de 5,11% en pesos y 4,07% en dólares, el forward a 1 año "
+        "está…",
         ["Bajo el spot", "Igual al spot", "Sobre el spot (≈ 898,89)"],
         2,
         "Paridad de tasas: 890 × 1,0511 / 1,0407 ≈ 898,89. Los puntos reflejan el diferencial de "
         "tasas, no una predicción del dólar.",
     ),
     (
-        "Si el spot fuera 940 en vez de 890 (mismas tasas y plazo), los puntos forward…",
+        "Mismo ejemplo (tasas 5,11% y 4,07%, a 1 año), pero con spot 940 en vez de 890. Los puntos "
+        "forward…",
         ["Son los mismos 8,89 puntos", "Se recalculan: ≈ 9,39 puntos", "Pasan a cero"],
         1,
         "Los puntos son proporcionales al spot: 940 × (1,0511/1,0407 − 1) ≈ 9,39. No se heredan de "
@@ -77,8 +79,8 @@ QUESTIONS: list[tuple[str, list[str], int, str]] = [
         "¿Qué pasa con la prima de una opción si sube la volatilidad (todo lo demás igual)?",
         ["Baja", "Sube", "No cambia"],
         1,
-        "Más volatilidad amplía el abanico de escenarios; como la pérdida del comprador está "
-        "acotada, más dispersión aumenta el valor esperado del derecho (vega positiva).",
+        "Más volatilidad = más probabilidad de movimientos grandes. Como quien compra la opción "
+        "nunca pierde más que la prima, esos movimientos solo suman valor al derecho: la prima sube.",
     ),
     (
         "Un importador quiere un collar de costo cero. ¿Qué arma?",
@@ -92,11 +94,16 @@ QUESTIONS: list[tuple[str, list[str], int, str]] = [
         "bajas bajo el piso). Compra put + vende call es el collar del exportador.",
     ),
     (
-        "Bajo IFRS 9, sin contabilidad de coberturas, la variación del MtM de un derivado va a…",
-        ["Resultados del período", "Patrimonio (OCI)", "No se registra hasta el vencimiento"],
-        0,
-        "Todo derivado va al balance a valor razonable; sin hedge accounting, sus cambios van a "
-        "resultados. Con hedge accounting de flujo de caja, la porción efectiva va a OCI.",
+        "Tu forward de compra todavía no vence y su MtM está negativo (el dólar bajó). ¿Qué puede pasar?",
+        [
+            "Nada: un forward solo importa al vencimiento",
+            "El banco puede consumir tu línea de crédito o pedirte garantías",
+            "El contrato se cancela automáticamente",
+        ],
+        1,
+        "Mientras el contrato está vivo, un MtM en tu contra es una deuda potencial con el banco. "
+        "En Chile lo usual es que el banco la cubra con tu línea de crédito o pida garantías: hay "
+        "un efecto de liquidez aunque la cobertura funcione.",
     ),
 ]
 
@@ -117,31 +124,33 @@ def _reset_quiz() -> None:
 
 checked = st.session_state.get("quiz_checked", False)
 
-# Los radios viven en un form: su valor se actualiza al presionar "Revisar", no en cada clic.
+# Los radios van fuera de un form: cada respuesta dispara un rerun y la barra avanza en vivo.
+# Se lee session_state antes de dibujar los radios (ya trae el valor recién elegido).
 answered = sum(st.session_state.get(k) is not None for k in KEYS)
 st.progress(
     answered / len(QUESTIONS),
-    text=f"Respondidas al revisar: {answered} de {len(QUESTIONS)}",
+    text=f"Respondidas: {answered} de {len(QUESTIONS)}",
 )
 
-with st.form("quiz", border=False):
-    answers: list[str | None] = []
-    for i, (q, opts, correct, why) in enumerate(QUESTIONS, start=1):
-        with st.container(border=True):
-            ans = st.radio(f"**{i}. {q}**", opts, index=None, key=f"q{i}")
-            answers.append(ans)
-            if checked and ans is not None:
-                if ans == opts[correct]:
-                    st.success(why, title="Correcto", icon=":material/check_circle:")
-                else:
-                    st.error(
-                        f"Respuesta correcta: *{opts[correct]}*. {why}",
-                        title="Incorrecto",
-                        icon=":material/cancel:",
-                    )
-    submitted = st.form_submit_button(
-        "Revisar", type="primary", icon=":material/fact_check:", on_click=_mark_checked
-    )
+answers: list[str | None] = []
+for i, (q, opts, correct, why) in enumerate(QUESTIONS, start=1):
+    with st.container(border=True):
+        ans = st.radio(f"**{i}. {q}**", opts, index=None, key=f"q{i}")
+        answers.append(ans)
+        if checked and ans is not None:
+            if ans == opts[correct]:
+                st.success(why, title="Correcto", icon=":material/check_circle:")
+            else:
+                st.error(
+                    f"Respuesta correcta: *{opts[correct]}*. {why}",
+                    title="Incorrecto",
+                    icon=":material/cancel:",
+                )
+
+# Primer botón de la página (los tests lo usan como at.button[0]).
+submitted = st.button(
+    "Revisar", type="primary", icon=":material/fact_check:", on_click=_mark_checked, key="quiz_check"
+)
 
 if checked:
     section("Resultado", icon=":material/scoreboard:")
