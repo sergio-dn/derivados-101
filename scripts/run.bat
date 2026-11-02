@@ -6,22 +6,22 @@ setlocal EnableExtensions EnableDelayedExpansion
 
 cd /d "%~dp0.."
 
-REM 1) Buscar un Python >= 3.10 (lanzador "py" primero, luego "python")
+REM 1) Buscar un Python >= 3.11 (lanzador "py" primero, luego "python")
 set "PYTHON_BIN="
 where py >nul 2>&1
 if not errorlevel 1 (
-    py -3 -c "import sys; sys.exit(0 if sys.version_info >= (3, 10) else 1)" >nul 2>&1
+    py -3 -c "import sys; sys.exit(0 if sys.version_info >= (3, 11) else 1)" >nul 2>&1
     if not errorlevel 1 set "PYTHON_BIN=py -3"
 )
 if not defined PYTHON_BIN (
     where python >nul 2>&1
     if not errorlevel 1 (
-        python -c "import sys; sys.exit(0 if sys.version_info >= (3, 10) else 1)" >nul 2>&1
+        python -c "import sys; sys.exit(0 if sys.version_info >= (3, 11) else 1)" >nul 2>&1
         if not errorlevel 1 set "PYTHON_BIN=python"
     )
 )
 if not defined PYTHON_BIN (
-    echo ERROR: se necesita Python 3.10 o superior y no se encontro.
+    echo ERROR: se necesita Python 3.11 o superior y no se encontro.
     echo        Descargalo desde https://www.python.org/downloads/
     echo        y marca "Add python.exe to PATH" durante la instalacion.
     exit /b 1

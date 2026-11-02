@@ -9,9 +9,9 @@ REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$REPO_DIR"
 
 MIN_MAJOR=3
-MIN_MINOR=10
+MIN_MINOR=11
 
-# 1) Buscar un Python >= 3.10
+# 1) Buscar un Python >= 3.11
 PYTHON_BIN=""
 for candidate in python3 python; do
     if command -v "$candidate" >/dev/null 2>&1; then

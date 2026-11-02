@@ -2,7 +2,7 @@
 name = "derivados101"
 version = "0.1.0"
 description = "App educativa para entender derivados de moneda (USD/CLP): forwards, opciones y estrategias."
-requires-python = ">=3.10"
+requires-python = ">=3.11"
 license = { text = "MIT" }
 authors = [{ name = "Sergio Domínguez" }]
 
@@ -12,7 +12,7 @@ pythonpath = ["src", "."]
 
 [tool.ruff]
 line-length = 110
-target-version = "py310"
+target-version = "py311"
 
 [tool.ruff.lint]
 select = ["E", "F", "W", "I", "B", "UP"]

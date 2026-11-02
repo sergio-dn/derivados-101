@@ -19,7 +19,7 @@ que alguna vez escuchó "tomamos un forward" en una reunión y se quedó con la 
 
 ## Cómo abrirla en tu computador (3 pasos)
 
-No necesitas saber programar. Solo tener **Python 3.10 o superior** instalado.
+No necesitas saber programar. Solo tener **Python 3.11 o superior** instalado.
 
 ### macOS / Linux
 

@@ -1,0 +1,44 @@
+name: Actualizar datos
+
+# Refresca el dólar observado y las tasas de referencia una vez por semana.
+# Si hay cambios, los commitea en main y Streamlit Cloud se redespliega solo.
+on:
+  schedule:
+    - cron: "0 12 * * 1"  # lunes 12:00 UTC (≈ 09:00 Chile)
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: requirements.txt
+
+      - name: Instalar dependencias
+        run: pip install -r requirements.txt
+
+      - name: Actualizar dólar observado
+        run: python scripts/update_usdclp.py
+
+      - name: Actualizar tasas de referencia
+        run: python scripts/update_rates.py || echo "FRED no respondió; se conservan las tasas actuales"
+
+      - name: Commit si hay cambios
+        run: |
+          if git diff --quiet -- data/; then
+            echo "Sin cambios en data/"
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add data/
+          git commit -m "Actualizar datos de mercado (automático)"
+          git push
