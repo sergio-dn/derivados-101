@@ -1,72 +1,41 @@
-# Derivados 101 — forwards y opciones sobre el dólar, explicados con el dólar real
+# Derivados 101
 
-App para entender, en simple, cómo funcionan los **derivados de moneda USD/CLP**:
-forwards, opciones y collares. Cada concepto es una pregunta directa ("¿Qué es un forward?")
-con pocas pantallas: la idea, un ejemplo con números y una calculadora para ver cómo
-funciona en la práctica.
+Forwards y opciones sobre el dólar, explicados en simple y con el dólar real.
 
-Está pensada para personas con finanzas básicas que alguna vez escucharon "tomamos un
-forward" en una reunión y se quedaron con la duda. No es un curso de valorización ni de
-contabilidad de coberturas.
+### Úsala en línea: **[derivados-101.streamlit.app](https://derivados-101.streamlit.app)**
+
+No necesitas instalar nada: se abre en el navegador, también en el celular.
 
 > **Material educativo. No es asesoría financiera ni contable.**
 
-**En línea:** [derivados-101.streamlit.app](https://derivados-101.streamlit.app)
-
 ![Inicio: la lista de preguntas](docs/inicio.png)
+
+---
+
+## Qué es
+
+Una app para entender cómo funcionan los **derivados de moneda USD/CLP**: forwards,
+opciones y collares. Está pensada para personas con finanzas básicas que alguna vez
+escucharon "tomamos un forward" en una reunión y se quedaron con la duda.
+
+Cada concepto es una pregunta directa ("¿Qué es un forward?") con pocas pantallas:
+
+1. la idea, en pocas líneas;
+2. un ejemplo con números;
+3. una calculadora para ver cómo funciona en la práctica;
+4. tres ideas para llevarse.
+
+No es un curso de valorización ni de contabilidad de coberturas. Donde simplifica, lo
+dice: en la realidad hay márgenes del banco, curvas de tasas y contratos de crédito que
+cambian los números.
 
 <p align="center"><img src="docs/demo_mtm.png" width="49%" alt="Demo: MtM de un forward y cuándo el banco pide garantías"> <img src="docs/demo_collar.png" width="49%" alt="Demo: collar de costo cero, al subir el techo baja el piso"></p>
 
 <sub>Izquierda: mueves el forward de mercado y ves el MtM, cuánta línea de crédito usa y cuándo sale caja como garantía. Derecha: subes el techo del collar y el piso de costo cero se ajusta solo.</sub>
 
----
-
-## Cómo abrirla en tu computador (3 pasos)
-
-No necesitas saber programar. Solo tener **Python 3.11 o superior** instalado.
-
-### macOS / Linux
-
-1. **Instala Python** desde [python.org/downloads](https://www.python.org/downloads/)
-   (en Mac también sirve `brew install python`). Verifica en la Terminal: `python3 --version`.
-2. **Descarga este proyecto**: botón verde *Code → Download ZIP* en GitHub y descomprímelo
-   (o `git clone` si usas git).
-3. **Abre la Terminal en la carpeta del proyecto y ejecuta:**
-
-   ```bash
-   bash scripts/run.sh
-   ```
-
-### Windows
-
-1. **Instala Python** desde [python.org/downloads](https://www.python.org/downloads/).
-   Durante la instalación marca la casilla **"Add python.exe to PATH"**.
-2. **Descarga este proyecto**: *Code → Download ZIP* y descomprímelo.
-3. **Abre la carpeta del proyecto y haz doble clic en `scripts\run.bat`**
-   (o ejecútalo desde la consola: `scripts\run.bat`).
-
-La primera vez el script crea un entorno aislado (`.venv`) e instala las dependencias;
-tarda un par de minutos. Las siguientes veces abre directo. La app se abre sola en tu
-navegador en `http://localhost:8501`. Para cerrarla, vuelve a la terminal y presiona
-`Ctrl + C`.
-
-<details>
-<summary>Instalación manual (si prefieres hacerlo a mano)</summary>
-
-```bash
-python3 -m venv .venv
-source .venv/bin/activate          # Windows: .venv\Scripts\activate
-pip install -r requirements.txt
-streamlit run app.py
-```
-</details>
-
----
-
 ## Qué hay en la app
 
-**Conceptos.** Nueve preguntas, en orden de lectura. Cada una tiene de 3 a 6 pantallas
-(concepto, ejemplo, demo interactiva y 3 ideas clave):
+**Conceptos.** Nueve preguntas, en orden de lectura:
 
 1. ¿Qué es el riesgo cambiario?
 2. ¿Qué es un derivado?
@@ -78,73 +47,100 @@ streamlit run app.py
 8. ¿Qué es un collar de costo cero?
 9. ¿Cuánto y cuándo cubrirse?
 
-**Simuladores.** Para quien quiera jugar con todos los parámetros: Forward (precio,
-liquidación, MtM), Opciones (resultado al vencimiento, de qué está hecha la prima),
-Estrategias (presets y combinaciones de hasta 4 opciones) y Dólar en Chile (histórico,
-cuánto se mueve y qué habría pasado cubriéndose).
+**Simuladores.** Para mover todos los parámetros: Forward (precio, liquidación, MtM),
+Opciones (resultado al vencimiento y de qué está hecha la prima), Estrategias (presets y
+combinaciones de hasta 4 opciones) y Dólar en Chile (histórico, cuánto se mueve y qué
+habría pasado cubriéndose).
 
 **Repasa.** Más preguntas frecuentes y un quiz corto.
 
-Donde la app simplifica, lo dice: en la realidad hay márgenes del banco, curvas de tasas
-y contratos de crédito que cambian los números.
+Los ejemplos usan casos genéricos (*"un importador chileno que debe pagar US$500.000 en
+un año"*) con cifras fijas rotuladas como ejemplo: spot 890, tasas de 5,11% en pesos y
+4,07% en dólares, forward a 1 año de 898,89. En los simuladores, el dólar de partida es
+el último observado, y también es solo un ejemplo.
 
-Los ejemplos usan casos genéricos (por ejemplo, *"un importador chileno que debe pagar
-USD 500.000 en un año"*) con cifras fijas rotuladas como ejemplo: spot 890, tasas de 5,11%
-en pesos y 4,07% en dólares, forward a 1 año de 898,89. En los simuladores, el dólar de
-partida es el último observado disponible, y también es solo un ejemplo.
+## De dónde salen los datos
 
----
-
-## Fuente de datos
-
-- **Dólar observado** oficial publicado por el Banco Central de Chile.
-- La app trae **un CSV incluido** (`data/usdclp_dolar_observado.csv`, desde enero 2024),
-  así que funciona **sin internet**: la app nunca consulta APIs externas al abrirse.
-- **Tasas de referencia** (`data/tasas_referencia.csv`): tasas interbancarias a 3 meses de
+- **Dólar observado** del Banco Central de Chile, en `data/usdclp_dolar_observado.csv`
+  (desde enero de 2024). Se actualiza solo cada día hábil desde la API oficial del Banco
+  Central, con respaldo en [mindicador.cl](https://mindicador.cl). Las credenciales viven
+  en los *Secrets* de GitHub: nunca en el código ni en la app publicada.
+- **Tasas de referencia** en `data/tasas_referencia.csv`: tasas interbancarias a 3 meses de
   Chile y EE.UU. publicadas por la OCDE vía [FRED](https://fred.stlouisfed.org). Son una
-  aproximación: un banco cotiza con sus propias tasas y margen.
-- Un proceso de GitHub actualiza el CSV cada día hábil desde la **API oficial del Banco Central**
-  (si el repositorio tiene configuradas credenciales en sus *Secrets*) o, si no, desde mindicador.cl.
-  Las credenciales nunca están en el código ni en la app publicada.
-- Las volatilidades de los ejemplos son **valores ilustrativos**, no cotizaciones de mercado. Para operar, consulta precios reales con tu contraparte.
+  aproximación: un banco cotiza con sus propias tasas y su margen.
+- **Volatilidades** de los ejemplos: valores ilustrativos, no cotizaciones de mercado.
+
+La app no consulta internet al abrirse: lee esos CSV, así que carga rápido y no depende de
+servicios externos. Para operar, consulta precios reales con tu banco.
+
+## Cómo se publica
+
+- **Producción:** [Streamlit Community Cloud](https://streamlit.io/cloud), desde la rama
+  `main` de este repositorio (`app.py`, Python 3.12). Cada push a `main` la vuelve a publicar.
+- **Datos:** el workflow [`actualizar-datos.yml`](.github/workflows/actualizar-datos.yml)
+  corre de lunes a viernes cerca de las 9:00 de Chile y hace commit en `main` si hay datos nuevos.
+- **Calidad:** el workflow [`ci.yml`](.github/workflows/ci.yml) corre los tests y `ruff` en
+  Python 3.11 y 3.12 en cada push.
 
 ---
+
+## Correrla en tu computador (opcional)
+
+Solo necesitas **Python 3.11 o superior**.
+
+- **macOS / Linux:** descarga el proyecto (*Code → Download ZIP*), abre la Terminal en la
+  carpeta y ejecuta `bash scripts/run.sh`.
+- **Windows:** descarga el proyecto, instala Python marcando **"Add python.exe to PATH"** y
+  haz doble clic en `scripts\run.bat`.
+
+La primera vez el script crea un entorno aislado (`.venv`) e instala las dependencias.
+La app se abre en `http://localhost:8501`. Para cerrarla, `Ctrl + C` en la terminal.
+
+<details>
+<summary>Instalación manual</summary>
+
+```bash
+python3 -m venv .venv
+source .venv/bin/activate          # Windows: .venv\Scripts\activate
+pip install -r requirements.txt
+streamlit run app.py
+```
+</details>
 
 ## Cómo está organizado el código
 
-Para quien quiera leerlo o reutilizarlo. Python 3.11 o superior, interfaz en [Streamlit](https://streamlit.io),
-gráficos en Plotly. El cálculo está separado de la interfaz: toda la matemática vive en
-funciones puras, testeadas, que no saben nada de pantallas.
+Interfaz en [Streamlit](https://streamlit.io), gráficos en Plotly. El cálculo está separado
+de la interfaz: la matemática vive en funciones puras y testeadas.
 
 ```
 derivados-101/
-├── app.py                    # Entrada: navegación (st.navigation) con títulos e íconos
+├── app.py                    # Entrada: menú (Conceptos, Simuladores, Repasa)
 ├── app_pages/                # Inicio, simuladores, más preguntas y quiz
-├── src/derivados101/         # Núcleo de cálculo, sin interfaz
+├── src/derivados101/
 │   ├── curso/                # Las 9 preguntas: textos y demos de cada pantalla (puro)
 │   ├── curso_ui.py           # Dibuja las pantallas, las demos y sus gráficos
-│   ├── forward.py            # Precio forward, sintético, liquidación, valor de mercado
+│   ├── forward.py            # Precio forward, liquidación, valor de mercado (MtM)
 │   ├── options.py            # Payoff, prima (Garman-Kohlhagen), valor intrínseco y temporal
-│   ├── strategies.py         # Estrategias predefinidas, P&L combinado, breakevens
-│   ├── market.py             # Dólar observado, tasas de referencia, volatilidad, backtest
-│   └── ui.py                 # Formatos ($ 1.234,56), paleta y disclaimer
-├── tests/                    # Pruebas automáticas (pytest)
+│   ├── strategies.py         # Estrategias predefinidas y collar de costo cero
+│   ├── market.py             # Dólar observado, API del Banco Central, tasas, backtest
+│   └── ui.py                 # Formatos ($1.234,56), paleta y disclaimer
+├── scripts/                  # run.sh / run.bat y actualización de datos
 ├── data/                     # CSV del dólar observado y de tasas de referencia
-├── scripts/                  # run.sh / run.bat y scripts de actualización de datos
-├── pyproject.toml            # Metadatos y configuración de pytest y ruff
+├── tests/                    # Pruebas automáticas (pytest)
+├── .github/workflows/        # CI y actualización diaria de datos
 └── CONTRACT.md               # Especificación: firmas de funciones y convenciones
 ```
 
 Convenciones: precios en **CLP por USD**, plazos en **años**, tasas como decimales
-(`0.0511` = 5,11 %), capitalización compuesta anual. Ejemplo de referencia:
+(`0.0511` = 5,11%), capitalización compuesta anual. Ejemplo de referencia:
 `890 × 1,0511 / 1,0407 = 898,89`.
 
 Para desarrollar:
 
 ```bash
 pip install -r requirements-dev.txt
-pytest -q        # pyproject.toml ya agrega src/ al path
-ruff check .     # reglas y versión (0.17.*) fijadas en pyproject.toml / requirements-dev.txt
+pytest -q
+ruff check .
 ```
 
 ---
@@ -152,9 +148,9 @@ ruff check .     # reglas y versión (0.17.*) fijadas en pyproject.toml / requir
 ## Aviso
 
 **Material educativo. No es asesoría financiera ni contable.** Los modelos están
-simplificados a propósito (por ejemplo, no incluyen costos de transacción, spreads
-bancarios, riesgo de crédito ni el detalle completo de la norma contable). Antes de
-contratar un derivado, consulta con tu banco, tu asesor y tu auditor.
+simplificados a propósito: no incluyen costos de transacción, márgenes bancarios, riesgo
+de crédito ni el detalle de la norma contable. Antes de contratar un derivado, consulta
+con tu banco, tu asesor y tu auditor.
 
 ## Licencia
 
