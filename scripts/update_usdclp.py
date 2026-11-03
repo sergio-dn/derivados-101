@@ -1,18 +1,20 @@
 """Actualiza ``data/usdclp_dolar_observado.csv`` con el dólar observado más reciente.
 
 Fuentes, en orden:
-1. API oficial del Banco Central de Chile (SIETE), si existen las variables de entorno
-   ``BCCH_USER`` y ``BCCH_PASS``. En GitHub Actions vienen de los Secrets del repositorio.
+1. API oficial del Banco Central de Chile (BDE), con ``BCCH_TOKEN`` (API Key Token,
+   recomendado) o, si no existe, con ``BCCH_USER`` y ``BCCH_PASS`` (correo y clave de la BDE).
+   En GitHub Actions vienen de los Secrets del repositorio.
 2. mindicador.cl (pública, sin credenciales), si no hay credenciales o el BCCh falla.
 
 Si ninguna responde, deja el CSV intacto y termina con código 0: el CSV incluido sigue
 sirviendo de respaldo para la app.
 
-Seguridad: las credenciales del BCCh viajan en la URL de la API. Este script nunca imprime
-la URL, el texto de errores de red ni las variables de entorno; solo el tipo de error.
+Seguridad: las credenciales del BCCh viajan en la URL de la API. Este script nunca imprime la URL,
+el texto de errores de red ni las variables de entorno; solo el tipo de error.
 
 Uso::
 
+    BCCH_TOKEN=... .venv/bin/python scripts/update_usdclp.py
     BCCH_USER=... BCCH_PASS=... .venv/bin/python scripts/update_usdclp.py
 """
 
@@ -38,12 +40,15 @@ logging.getLogger("httpcore").setLevel(logging.WARNING)
 
 
 def _from_bcch(today: date) -> list[dict]:
-    user, password = os.environ.get("BCCH_USER", ""), os.environ.get("BCCH_PASS", "")
-    if not (user and password):
+    token = os.environ.get("BCCH_TOKEN", "").strip()
+    user, password = os.environ.get("BCCH_USER", "").strip(), os.environ.get("BCCH_PASS", "")
+    if not (token or (user and password)):
         logger.info("Sin credenciales del BCCh; se usa mindicador.cl.")
         return []
+    logger.info("BCCh: autenticación con %s.", "token" if token else "usuario y clave")
     try:
-        rows = fetch_usdclp_bcch(user, password, today - timedelta(days=400), today)
+        rows = fetch_usdclp_bcch(today - timedelta(days=400), today,
+                                 token=token or None, user=user or None, password=password or None)
     except RuntimeError as exc:  # mensaje genérico, sin URL (ver fetch_usdclp_bcch)
         logger.warning("%s; se intenta mindicador.cl.", exc)
         return []

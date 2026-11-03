@@ -3,9 +3,10 @@ name: Actualizar datos
 # Refresca el dólar observado (días hábiles) y las tasas de referencia.
 # Si hay cambios, los commitea en main y Streamlit Cloud se redespliega solo.
 #
-# Credenciales del Banco Central: Settings → Secrets and variables → Actions → BCCH_USER y
-# BCCH_PASS. GitHub las enmascara en los logs y no las entrega a PRs desde forks. Sin ellas,
-# el script usa mindicador.cl. Nunca agregar `set -x` ni imprimir variables de entorno aquí.
+# Credenciales del Banco Central en Settings → Secrets and variables → Actions:
+# BCCH_TOKEN (API Key Token de la BDE, recomendado) o BCCH_USER + BCCH_PASS (correo y clave).
+# GitHub las enmascara en los logs y no las entrega a PRs desde forks. Sin ellas, el script
+# usa mindicador.cl. Nunca agregar `set -x` ni imprimir variables de entorno aquí.
 on:
   schedule:
     - cron: "0 12 * * 1-5"  # lunes a viernes 12:00 UTC (≈ 09:00 Chile)
@@ -31,6 +32,7 @@ jobs:
 
       - name: Actualizar dólar observado
         env:
+          BCCH_TOKEN: ${{ secrets.BCCH_TOKEN }}
           BCCH_USER: ${{ secrets.BCCH_USER }}
           BCCH_PASS: ${{ secrets.BCCH_PASS }}
         run: python scripts/update_usdclp.py

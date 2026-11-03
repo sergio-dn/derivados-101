@@ -278,9 +278,9 @@ def test_latest_spot_last_resort(monkeypatch, tmp_path, capture_warnings):
     assert (value, source) == (900.0, "fijo")
 
 
-# --- API del Banco Central (credenciales) ------------------------------------ #
+# --- API del Banco Central (token) ------------------------------------ #
 
-_USER, _PASS = "usuario-de-prueba", "clave-super-secreta-123"
+_TOKEN, _USER, _PASS = "token-super-secreto-123", "usuario@ejemplo.cl", "clave-super-secreta-456"
 
 
 def _bcch_payload(obs, codigo=0):
@@ -300,28 +300,30 @@ def test_bcch_parses_and_skips_missing_days(monkeypatch):
         ]))
 
     _mock_client(monkeypatch, handler)
-    rows = market.fetch_usdclp_bcch(_USER, _PASS, date(2024, 1, 1), date(2024, 1, 10))
+    rows = market.fetch_usdclp_bcch(date(2024, 1, 1), date(2024, 1, 10), token=_TOKEN)
     assert rows == [{"date": "2024-01-02", "usdclp": 877.12}, {"date": "2024-01-03", "usdclp": 884.59}]
     assert seen["timeseries"] == "F073.TCO.PRE.Z.D" and seen["firstdate"] == "2024-01-01"
+    assert seen["token"] == _TOKEN and "user" not in seen and "pass" not in seen
 
 
+@pytest.mark.parametrize("auth", [{"token": _TOKEN}, {"user": _USER, "password": _PASS}], ids=["token", "user"])
 @pytest.mark.parametrize("response", [
     httpx.Response(500, text="error"),
     httpx.Response(200, json=_bcch_payload(None, codigo=-5)),
     httpx.Response(200, text="no es json"),
 ])
-def test_bcch_failure_never_leaks_credentials(monkeypatch, capture_warnings, no_sleep, response):
-    """Ni el mensaje, ni la cadena de excepciones, ni los logs muestran la clave o la URL."""
+def test_bcch_failure_never_leaks_credentials(monkeypatch, capture_warnings, no_sleep, response, auth):
+    """Ni el mensaje, ni la cadena de excepciones, ni los logs muestran el token o la URL."""
     _mock_client(monkeypatch, lambda request: response)
     with pytest.raises(RuntimeError) as info:
-        market.fetch_usdclp_bcch(_USER, _PASS, date(2024, 1, 1), date(2024, 1, 10), retries=2)
+        market.fetch_usdclp_bcch(date(2024, 1, 1), date(2024, 1, 10), retries=2, **auth)
     exposed = [str(info.value), repr(info.value), capture_warnings.text,
                str(info.value.__cause__), str(info.value.__context__ if not info.value.__suppress_context__ else "")]
     for text in exposed:
-        assert _PASS not in text and _USER not in text and "si3.bcentral.cl" not in text
+        assert all(v not in text for v in (_TOKEN, _USER, _PASS, "si3.bcentral.cl"))
 
 
-def test_bcch_bad_credentials_are_not_retried(monkeypatch, no_sleep):
+def test_bcch_bad_token_is_not_retried(monkeypatch, no_sleep):
     calls = []
 
     def handler(request):
@@ -330,5 +332,22 @@ def test_bcch_bad_credentials_are_not_retried(monkeypatch, no_sleep):
 
     _mock_client(monkeypatch, handler)
     with pytest.raises(RuntimeError, match="código -5"):
-        market.fetch_usdclp_bcch(_USER, _PASS, date(2024, 1, 1), date(2024, 1, 10), retries=3)
+        market.fetch_usdclp_bcch(date(2024, 1, 1), date(2024, 1, 10), token=_TOKEN, retries=3)
     assert len(calls) == 1 and no_sleep == []
+
+
+def test_bcch_user_password_fallback(monkeypatch):
+    seen = {}
+
+    def handler(request):
+        seen.update(request.url.params)
+        return httpx.Response(200, json=_bcch_payload([]))
+
+    _mock_client(monkeypatch, handler)
+    assert market.fetch_usdclp_bcch(date(2024, 1, 1), date(2024, 1, 2), user=_USER, password=_PASS) == []
+    assert seen["user"] == _USER and seen["pass"] == _PASS and "token" not in seen
+
+
+def test_bcch_requires_some_credential():
+    with pytest.raises(ValueError):
+        market.fetch_usdclp_bcch(date(2024, 1, 1), date(2024, 1, 2))

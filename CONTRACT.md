@@ -137,11 +137,11 @@ def spot_grid(spot0: float, pct: float = 0.20, n: int = 401) -> np.ndarray
 ```
 
 ### `market.py`
-Credenciales del BCCh: SOLO en GitHub Secrets (BCCH_USER/BCCH_PASS) para scripts/update_usdclp.py.
-Nunca en el repo, la app ni Streamlit Cloud. La API las recibe en la URL: no registrar URL ni str(exc).
+Credenciales del BCCh: BCCH_TOKEN (API Key Token, recomendado) o BCCH_USER/BCCH_PASS, SOLO en
+GitHub Secrets para scripts/update_usdclp.py. Nunca en el repo, la app ni Streamlit Cloud. Va en la URL: no registrar URL ni str(exc).
 
 ```python
-def fetch_usdclp_bcch(user, password, start: date, end: date, timeout=15.0, retries=3) -> list[dict]
+def fetch_usdclp_bcch(start: date, end: date, *, token=None, user=None, password=None, timeout=15.0, retries=3) -> list[dict]
     # API SIETE serie F073.TCO.PRE.Z.D; filas {"date","usdclp"}; RuntimeError genérico (from None)
 DEFAULT_CSV: Path    # data/usdclp_dolar_observado.csv (resuelto relativo al repo)
 def load_usdclp(path: Path | None = None) -> pd.DataFrame     # date (datetime64), usdclp; ordenado

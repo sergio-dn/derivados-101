@@ -1,4 +1,4 @@
-"""scripts/update_usdclp.py: nunca muestra las credenciales del BCCh y no rompe el CSV."""
+"""scripts/update_usdclp.py: nunca muestra las token del BCCh y no rompe el CSV."""
 
 import importlib.util
 import logging
@@ -10,7 +10,7 @@ import pytest
 from derivados101 import market
 
 ROOT = Path(__file__).resolve().parents[1]
-_PASS = "clave-super-secreta-123"
+_PASS = "clave-super-secreta-456"
 
 
 @pytest.fixture
@@ -23,7 +23,8 @@ def script(monkeypatch, tmp_path):
     monkeypatch.setattr(mod, "DEFAULT_CSV", csv)
     monkeypatch.setattr(mod, "load_usdclp", lambda: market.load_usdclp(csv))
     monkeypatch.setattr(market, "_sleep", lambda s: None)
-    monkeypatch.setenv("BCCH_USER", "usuario-de-prueba")
+    monkeypatch.delenv("BCCH_TOKEN", raising=False)
+    monkeypatch.setenv("BCCH_USER", "usuario@ejemplo.cl")
     monkeypatch.setenv("BCCH_PASS", _PASS)
     return mod, csv
 
@@ -45,10 +46,10 @@ def test_script_failure_keeps_csv_and_hides_secret(script, monkeypatch, caplog, 
     out = capsys.readouterr()
     assert csv.read_text() == before
     for text in (caplog.text, out.out, out.err):
-        assert _PASS not in text and "si3.bcentral.cl" not in text
+        assert _PASS not in text and "usuario@ejemplo.cl" not in text and "si3.bcentral.cl" not in text
 
 
-def test_script_uses_bcch_when_credentials_exist(script, monkeypatch):
+def test_script_uses_bcch_with_user_and_password(script, monkeypatch):
     mod, csv = script
     payload = {"Codigo": 0, "Series": {"Obs": [
         {"indexDateString": "03-01-2024", "value": "884.59", "statusCode": "OK"}]}}

@@ -1,7 +1,7 @@
 """Datos de mercado del USD/CLP: histórico, volatilidad, escenarios y simulación.
 
 Fuente: dólar observado oficial del Banco Central de Chile, vía la API oficial del
-BCCh (solo en el proceso de actualización, con credenciales en GitHub Secrets) o la API
+BCCh (solo en el proceso de actualización, con un token en GitHub Secrets) o la API
 pública de mindicador.cl. Se incluye un CSV local para que la app funcione sin
 internet; :func:`fetch_usdclp_live` intenta actualizar y, si falla, usa el CSV.
 """
@@ -124,26 +124,37 @@ BCCH_USDCLP_SERIES = "F073.TCO.PRE.Z.D"  # dólar observado diario
 
 
 def fetch_usdclp_bcch(
-    user: str,
-    password: str,
     start: date,
     end: date,
+    *,
+    token: str | None = None,
+    user: str | None = None,
+    password: str | None = None,
     timeout: float = 15.0,
     retries: int = 3,
 ) -> list[dict]:
-    """Descarga el dólar observado desde la API oficial del Banco Central de Chile (SIETE).
+    """Descarga el dólar observado desde la API oficial del Banco Central de Chile (BDE/SIETE).
 
-    Requiere credenciales personales del BCCh. La API las recibe en la URL, por eso esta
-    función NUNCA registra la URL, el texto de la excepción ni la respuesta: solo el tipo de
-    error. Las credenciales deben venir de variables de entorno (en CI, de GitHub Secrets).
+    Autentica con el API Key Token de la BDE (método recomendado por el BCCh; vigencia de un
+    año, se obtiene en "Mi Cuenta" de si3.bcentral.cl/siete) o, si no hay token, con el correo
+    y la contraseña de la BDE (método antiguo, que la API REST todavía acepta). Preferir el
+    token: se revoca sin exponer la clave de la cuenta.
+    La API recibe las credenciales en la URL, por eso esta función NUNCA registra la URL, el
+    texto de la excepción ni la respuesta: solo el tipo de error. Las credenciales deben venir
+    de variables de entorno (en CI, de GitHub Secrets).
 
     Devuelve filas ``{"date": "aaaa-mm-dd", "usdclp": float}`` (omite días sin dato).
     Lanza ``RuntimeError`` con un mensaje genérico, sin encadenar la excepción original
     (``from None``), para que un traceback tampoco muestre la URL.
     """
+    if token:
+        auth = {"token": token}
+    elif user and password:
+        auth = {"user": user, "pass": password}
+    else:
+        raise ValueError("Falta el token o el usuario y la contraseña del BCCh")
     params = {
-        "user": user,
-        "pass": password,
+        **auth,
         "firstdate": start.isoformat(),
         "lastdate": end.isoformat(),
         "timeseries": BCCH_USDCLP_SERIES,
@@ -157,7 +168,7 @@ def fetch_usdclp_bcch(
                 resp.raise_for_status()
                 data = resp.json()
                 if data.get("Codigo") != 0:
-                    # Código negativo = credenciales inválidas, serie o fechas erróneas.
+                    # Código -5 = credenciales inválidas o token vencido; otros negativos = serie o fechas erróneas.
                     error = f"la API respondió código {data.get('Codigo')}"
                     break  # reintentar no arregla credenciales malas
                 rows = []
