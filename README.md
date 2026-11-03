@@ -106,7 +106,9 @@ partida es el último observado disponible, y también es solo un ejemplo.
 - **Tasas de referencia** (`data/tasas_referencia.csv`): tasas interbancarias a 3 meses de
   Chile y EE.UU. publicadas por la OCDE vía [FRED](https://fred.stlouisfed.org). Son una
   aproximación: un banco cotiza con sus propias tasas y margen.
-- Un proceso de GitHub actualiza el dólar y las tasas cada lunes.
+- Un proceso de GitHub actualiza el CSV cada día hábil desde la **API oficial del Banco Central**
+  (si el repositorio tiene configuradas credenciales en sus *Secrets*) o, si no, desde mindicador.cl.
+  Las credenciales nunca están en el código ni en la app publicada.
 - Las volatilidades de los ejemplos son **valores ilustrativos**, no cotizaciones de mercado. Para operar, consulta precios reales con tu contraparte.
 
 ---

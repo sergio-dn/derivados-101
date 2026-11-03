@@ -46,7 +46,7 @@ def _mock_client(monkeypatch, handler):
 def test_load_csv(df):
     assert list(df.columns) == ["date", "usdclp"]
     assert pd.api.types.is_datetime64_any_dtype(df["date"])
-    assert len(df) == 706
+    assert len(df) >= 706  # crece con la actualización automática de data/
     assert df["date"].is_monotonic_increasing and df["date"].is_unique
     assert df["date"].iloc[0] == pd.Timestamp("2024-01-02")
     assert df["usdclp"].iloc[0] == pytest.approx(877.12)
@@ -276,3 +276,59 @@ def test_latest_spot_last_resort(monkeypatch, tmp_path, capture_warnings):
     monkeypatch.setattr(market, "DEFAULT_CSV", tmp_path / "no_existe.csv")
     value, _, source = market.latest_spot()
     assert (value, source) == (900.0, "fijo")
+
+
+# --- API del Banco Central (credenciales) ------------------------------------ #
+
+_USER, _PASS = "usuario-de-prueba", "clave-super-secreta-123"
+
+
+def _bcch_payload(obs, codigo=0):
+    return {"Codigo": codigo, "Descripcion": "Success" if codigo == 0 else "Invalid",
+            "Series": {"seriesId": market.BCCH_USDCLP_SERIES, "Obs": obs}}
+
+
+def test_bcch_parses_and_skips_missing_days(monkeypatch):
+    seen = {}
+
+    def handler(request):
+        seen.update(request.url.params)
+        return httpx.Response(200, json=_bcch_payload([
+            {"indexDateString": "02-01-2024", "value": "877.12", "statusCode": "OK"},
+            {"indexDateString": "06-01-2024", "value": "NaN", "statusCode": "ND"},
+            {"indexDateString": "03-01-2024", "value": "884.59", "statusCode": "OK"},
+        ]))
+
+    _mock_client(monkeypatch, handler)
+    rows = market.fetch_usdclp_bcch(_USER, _PASS, date(2024, 1, 1), date(2024, 1, 10))
+    assert rows == [{"date": "2024-01-02", "usdclp": 877.12}, {"date": "2024-01-03", "usdclp": 884.59}]
+    assert seen["timeseries"] == "F073.TCO.PRE.Z.D" and seen["firstdate"] == "2024-01-01"
+
+
+@pytest.mark.parametrize("response", [
+    httpx.Response(500, text="error"),
+    httpx.Response(200, json=_bcch_payload(None, codigo=-5)),
+    httpx.Response(200, text="no es json"),
+])
+def test_bcch_failure_never_leaks_credentials(monkeypatch, capture_warnings, no_sleep, response):
+    """Ni el mensaje, ni la cadena de excepciones, ni los logs muestran la clave o la URL."""
+    _mock_client(monkeypatch, lambda request: response)
+    with pytest.raises(RuntimeError) as info:
+        market.fetch_usdclp_bcch(_USER, _PASS, date(2024, 1, 1), date(2024, 1, 10), retries=2)
+    exposed = [str(info.value), repr(info.value), capture_warnings.text,
+               str(info.value.__cause__), str(info.value.__context__ if not info.value.__suppress_context__ else "")]
+    for text in exposed:
+        assert _PASS not in text and _USER not in text and "si3.bcentral.cl" not in text
+
+
+def test_bcch_bad_credentials_are_not_retried(monkeypatch, no_sleep):
+    calls = []
+
+    def handler(request):
+        calls.append(1)
+        return httpx.Response(200, json=_bcch_payload(None, codigo=-5))
+
+    _mock_client(monkeypatch, handler)
+    with pytest.raises(RuntimeError, match="código -5"):
+        market.fetch_usdclp_bcch(_USER, _PASS, date(2024, 1, 1), date(2024, 1, 10), retries=3)
+    assert len(calls) == 1 and no_sleep == []

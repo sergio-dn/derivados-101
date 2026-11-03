@@ -1,6 +1,7 @@
 """Datos de mercado del USD/CLP: histórico, volatilidad, escenarios y simulación.
 
-Fuente: dólar observado oficial del Banco Central de Chile, vía la API
+Fuente: dólar observado oficial del Banco Central de Chile, vía la API oficial del
+BCCh (solo en el proceso de actualización, con credenciales en GitHub Secrets) o la API
 pública de mindicador.cl. Se incluye un CSV local para que la app funcione sin
 internet; :func:`fetch_usdclp_live` intenta actualizar y, si falla, usa el CSV.
 """
@@ -20,7 +21,9 @@ from . import get_logger
 from .forward import forward_rate, settle_forward
 
 __all__ = [
+    "BCCH_USDCLP_SERIES",
     "DEFAULT_CSV",
+    "fetch_usdclp_bcch",
     "fetch_usdclp_live",
     "hedge_backtest",
     "horizon_changes",
@@ -114,6 +117,64 @@ def fetch_usdclp_live(years: list[int], timeout: float = 10.0, retries: int = 3)
             logger.warning("Tampoco se pudo leer el CSV local (%s).", exc2)
             return pd.DataFrame({"date": pd.Series(dtype="datetime64[ns]"),
                                  "usdclp": pd.Series(dtype=float)})
+
+
+_BCCH_URL = "https://si3.bcentral.cl/SieteRestWS/SieteRestWS.ashx"
+BCCH_USDCLP_SERIES = "F073.TCO.PRE.Z.D"  # dólar observado diario
+
+
+def fetch_usdclp_bcch(
+    user: str,
+    password: str,
+    start: date,
+    end: date,
+    timeout: float = 15.0,
+    retries: int = 3,
+) -> list[dict]:
+    """Descarga el dólar observado desde la API oficial del Banco Central de Chile (SIETE).
+
+    Requiere credenciales personales del BCCh. La API las recibe en la URL, por eso esta
+    función NUNCA registra la URL, el texto de la excepción ni la respuesta: solo el tipo de
+    error. Las credenciales deben venir de variables de entorno (en CI, de GitHub Secrets).
+
+    Devuelve filas ``{"date": "aaaa-mm-dd", "usdclp": float}`` (omite días sin dato).
+    Lanza ``RuntimeError`` con un mensaje genérico, sin encadenar la excepción original
+    (``from None``), para que un traceback tampoco muestre la URL.
+    """
+    params = {
+        "user": user,
+        "pass": password,
+        "firstdate": start.isoformat(),
+        "lastdate": end.isoformat(),
+        "timeseries": BCCH_USDCLP_SERIES,
+        "function": "GetSeries",
+    }
+    error = "sin respuesta"
+    with _make_client(timeout) as client:
+        for attempt in range(max(retries, 1)):
+            try:
+                resp = client.get(_BCCH_URL, params=params)
+                resp.raise_for_status()
+                data = resp.json()
+                if data.get("Codigo") != 0:
+                    # Código negativo = credenciales inválidas, serie o fechas erróneas.
+                    error = f"la API respondió código {data.get('Codigo')}"
+                    break  # reintentar no arregla credenciales malas
+                rows = []
+                for obs in data["Series"]["Obs"] or []:
+                    value = float(obs["value"])
+                    if math.isnan(value) or obs.get("statusCode") not in (None, "OK"):
+                        continue
+                    day, month, year = obs["indexDateString"].split("-")
+                    rows.append({"date": f"{year}-{month}-{day}", "usdclp": value})
+                return rows
+            except (httpx.HTTPError, KeyError, ValueError, TypeError, AttributeError) as exc:
+                error = type(exc).__name__
+                wait = 0.5 * 2**attempt
+                logger.info("BCCh: intento %d/%d falló (%s)", attempt + 1, retries, error)
+                if attempt < retries - 1:
+                    _sleep(wait)
+    raise RuntimeError(f"No se pudo descargar el dólar observado del BCCh ({error})") from None
 
 
 _LATEST_URL = "https://mindicador.cl/api/dolar"
