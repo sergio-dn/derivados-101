@@ -7,7 +7,6 @@ Este módulo sí importa Streamlit (a diferencia del resto del núcleo, que es p
 from __future__ import annotations
 
 import math
-import os
 from dataclasses import dataclass
 
 import plotly.graph_objects as go
@@ -87,21 +86,17 @@ def fmt_pct(value: float | None, decimals: int = 2) -> str:
 
 
 @st.cache_data(ttl=3600, show_spinner=False)
-def _example_spot_cached(live: bool) -> tuple[float, str, str]:
-    from .market import latest_spot  # import local: evita costo de httpx/pandas si no se usa
-
-    value, day, source = latest_spot(live=live, timeout=3.0)
-    return round(value, 2), day.strftime("%d-%m-%Y"), source
-
-
 def example_spot() -> tuple[float, str, str]:
-    """Dólar de ejemplo para los valores por defecto: el último observado que se encuentre.
+    """Dólar de ejemplo para los valores por defecto: el último observado del CSV incluido.
 
-    Devuelve ``(valor, fecha dd-mm-aaaa, fuente)``. Con la variable de entorno
-    ``DERIVADOS101_OFFLINE=1`` (tests) no consulta internet y usa el CSV local.
+    El CSV se actualiza cada día hábil desde la API del Banco Central (GitHub Actions), así que
+    la app no consulta internet: carga rápido y no depende de servicios externos.
+    Devuelve ``(valor, fecha dd-mm-aaaa, fuente)``.
     """
-    live = os.environ.get("DERIVADOS101_OFFLINE") != "1"
-    return _example_spot_cached(live)
+    from .market import latest_spot  # import local: evita costo de pandas si no se usa
+
+    value, day, source = latest_spot(live=False)
+    return round(value, 2), day.strftime("%d-%m-%Y"), source
 
 
 @st.cache_data(ttl=3600, show_spinner=False)
@@ -123,7 +118,7 @@ def example_rates() -> tuple[float, float, str]:
 def example_spot_note() -> None:
     """Caption estándar que deja explícito que el spot por defecto es solo un ejemplo."""
     value, day, source = example_spot()
-    origin = {"mindicador.cl": "dólar observado (mindicador.cl)", "csv": "dólar observado (datos incluidos)"}
+    origin = {"csv": "dólar observado (Banco Central de Chile)"}
     st.caption(
         f":material/info: Ejemplo: los valores por defecto parten del último "
         f"{origin.get(source, 'valor de referencia')} disponible, {fmt_rate(value)} al {day}. "

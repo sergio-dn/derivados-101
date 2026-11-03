@@ -35,7 +35,8 @@ intuición operativa sobre las fórmulas, y el contenido avanzado se simplifica 
 ## Datos
 
 `data/usdclp_dolar_observado.csv` — columnas `date` (YYYY-MM-DD), `usdclp` (float).
-Dólar observado oficial (BCCh) vía mindicador.cl, 2024-01-02 → 2026-11-02, 706 filas.
+Dólar observado oficial (BCCh), desde 2024-01-02; lo actualiza cada día hábil el workflow
+`actualizar-datos.yml` (API BCCh con token; respaldo mindicador.cl). La UI solo lee el CSV, sin red.
 
 `data/tasas_referencia.csv` — columnas `date` (YYYY-MM-DD, primer día del mes), `r_clp`, `r_usd`
 (decimales). Mensual desde 2023-01. Tasa interbancaria a 3 meses (OCDE vía FRED, series

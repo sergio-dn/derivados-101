@@ -97,12 +97,9 @@ partida es el último observado disponible, y también es solo un ejemplo.
 
 ## Fuente de datos
 
-- **Dólar observado** oficial publicado por el Banco Central de Chile, obtenido a través
-  de la API pública [mindicador.cl](https://mindicador.cl).
+- **Dólar observado** oficial publicado por el Banco Central de Chile.
 - La app trae **un CSV incluido** (`data/usdclp_dolar_observado.csv`, desde enero 2024),
-  así que funciona **sin internet**.
-- **Modo en vivo (opcional):** desde la app puedes pedir los datos actualizados a
-  mindicador.cl. Si la consulta falla, la app vuelve automáticamente al CSV incluido.
+  así que funciona **sin internet**: la app nunca consulta APIs externas al abrirse.
 - **Tasas de referencia** (`data/tasas_referencia.csv`): tasas interbancarias a 3 meses de
   Chile y EE.UU. publicadas por la OCDE vía [FRED](https://fred.stlouisfed.org). Son una
   aproximación: un banco cotiza con sus propias tasas y margen.

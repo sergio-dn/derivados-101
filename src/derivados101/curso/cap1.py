@@ -66,7 +66,7 @@ CHAPTER = Chapter(
             chart=Chart(
                 name="usdclp_history",
                 params={"years": 3},
-                caption="Dólar observado (CLP por USD). Fuente: Banco Central de Chile vía mindicador.cl.",
+                caption="Dólar observado (CLP por USD). Fuente: Banco Central de Chile.",
             ),
         ),
         Summary(

@@ -1,7 +1,7 @@
 """USD/CLP: histórico, volatilidad realizada, distribución por horizonte y backtest de cobertura."""
 
 import sys
-from datetime import date, timedelta
+from datetime import timedelta
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
@@ -10,7 +10,6 @@ import plotly.graph_objects as go
 import streamlit as st
 
 from derivados101.market import (
-    fetch_usdclp_live,
     hedge_backtest,
     horizon_changes,
     load_usdclp,
@@ -33,7 +32,6 @@ from derivados101.ui import (
 HORIZON_LABELS = {21: "1 mes", 63: "3 meses", 126: "6 meses", 189: "9 meses", 252: "1 año"}
 MONTHS = ["enero", "febrero", "marzo", "abril", "mayo", "junio", "julio", "agosto", "septiembre",
           "octubre", "noviembre", "diciembre"]
-SOURCE_LABELS = {"csv": "CSV incluido", "live": "Actualizar en vivo (mindicador.cl)"}
 
 info = next(p for p in PAGES if p.path.endswith("5_USDCLP.py"))
 page_setup(
@@ -54,38 +52,7 @@ def _local():
     return load_usdclp()
 
 
-@st.cache_data(ttl=3600, show_spinner="Descargando desde mindicador.cl…")
-def _live(years: tuple[int, ...]):
-    # Timeout corto y 2 intentos: si la API no responde, se cae al CSV en menos de ~10 s.
-    return fetch_usdclp_live(list(years), timeout=3.0, retries=2)
-
-
-st.session_state.setdefault("usd_source", "csv")
-source = st.segmented_control(
-    "Fuente de datos",
-    list(SOURCE_LABELS),
-    format_func=SOURCE_LABELS.get,
-    required=True,
-    key="usd_source",
-)
-if source == "live":
-    df = _live(tuple(range(2024, date.today().year + 1)))
-    local = _local()
-    if df.empty or df.equals(local):
-        # fetch_usdclp_live nunca lanza: si falla devuelve el CSV. Si el resultado es idéntico
-        # al CSV, no llegó nada nuevo (o la descarga falló): se avisa en vez de fingir "en vivo".
-        last_local = f"{local['date'].iloc[-1]:%d-%m-%Y}" if not local.empty else "—"
-        st.warning(
-            "No se obtuvieron datos nuevos desde mindicador.cl (el servicio no respondió o no hay "
-            f"datos posteriores). Se muestran los datos incluidos en la app, hasta el {last_local}.",
-            icon=":material/cloud_off:",
-        )
-        df = local if df.empty else df
-    else:
-        st.caption(":material/cloud_done: Datos descargados desde mindicador.cl.")
-else:
-    df = _local()
-
+df = _local()
 if df.empty:
     st.error("No hay datos disponibles.", icon=":material/error:")
     st.stop()
@@ -114,7 +81,7 @@ with tab_hist:
     fig = go.Figure(go.Scatter(x=df["date"], y=df["usdclp"], name="Dólar observado",
                                line=dict(color=PALETTE["primary"])))
     st.plotly_chart(style_fig(fig, None, "CLP por USD", height=460), width="stretch")
-    st.caption("Fuente: Banco Central de Chile, dólar observado, vía mindicador.cl.")
+    st.caption("Fuente: Banco Central de Chile, dólar observado. Se actualiza cada día hábil.")
 
 # ------------------------------------------------------------------ 2. volatilidad
 with tab_vol:
