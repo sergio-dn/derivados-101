@@ -351,3 +351,15 @@ def test_bcch_user_password_fallback(monkeypatch):
 def test_bcch_requires_some_credential():
     with pytest.raises(ValueError):
         market.fetch_usdclp_bcch(date(2024, 1, 1), date(2024, 1, 2))
+
+
+def test_bcch_accepts_windows_1252_response(monkeypatch):
+    """La respuesta real trae "dólar" en Windows-1252: no debe fallar por la codificación."""
+    import json
+
+    body = json.dumps(_bcch_payload([{"indexDateString": "02-01-2024", "value": "877.12", "statusCode": "OK"}])
+                      | {"Descripcion": "Éxito"}, ensure_ascii=False)
+    body = body.replace('"Series": {', '"Series": {"descripEsp": "Tipo de cambio nominal (dólar observado $CLP/USD)", ')
+    _mock_client(monkeypatch, lambda request: httpx.Response(200, content=body.encode("cp1252")))
+    rows = market.fetch_usdclp_bcch(date(2024, 1, 1), date(2024, 1, 3), user=_USER, password=_PASS)
+    assert rows == [{"date": "2024-01-02", "usdclp": 877.12}]

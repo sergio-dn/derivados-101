@@ -123,6 +123,17 @@ _BCCH_URL = "https://si3.bcentral.cl/SieteRestWS/SieteRestWS.ashx"
 BCCH_USDCLP_SERIES = "F073.TCO.PRE.Z.D"  # dólar observado diario
 
 
+def _json_any_encoding(raw: bytes) -> dict:
+    """JSON del BCCh: no siempre viene en UTF-8 (descripciones con "ó" en Windows-1252)."""
+    import json
+
+    try:
+        text = raw.decode("utf-8-sig")
+    except UnicodeDecodeError:
+        text = raw.decode("cp1252")
+    return json.loads(text)
+
+
 def fetch_usdclp_bcch(
     start: date,
     end: date,
@@ -166,7 +177,7 @@ def fetch_usdclp_bcch(
             try:
                 resp = client.get(_BCCH_URL, params=params)
                 resp.raise_for_status()
-                data = resp.json()
+                data = _json_any_encoding(resp.content)
                 if data.get("Codigo") != 0:
                     # Código -5 = credenciales inválidas o token vencido; otros negativos = serie o fechas erróneas.
                     error = f"la API respondió código {data.get('Codigo')}"
