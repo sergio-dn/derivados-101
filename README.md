@@ -1,19 +1,23 @@
 # Derivados 101 — forwards y opciones sobre el dólar, explicados con el dólar real
 
-App educativa e interactiva para entender, sin fórmulas de memoria, cómo funcionan los
-**derivados de moneda USD/CLP**: forwards, opciones y estrategias que combinan varias
-opciones. Mueves un control, ves el gráfico cambiar y lees por qué.
+App para entender, en simple, cómo funcionan los **derivados de moneda USD/CLP**:
+forwards, opciones y collares. Cada concepto es una pregunta directa ("¿Qué es un forward?")
+con pocas pantallas: la idea, un ejemplo con números y una calculadora para ver cómo
+funciona en la práctica.
 
-Está pensada para equipos de finanzas no especialistas, estudiantes y cualquier persona
-que alguna vez escuchó "tomamos un forward" en una reunión y se quedó con la duda.
+Está pensada para personas con finanzas básicas que alguna vez escucharon "tomamos un
+forward" en una reunión y se quedaron con la duda. No es un curso de valorización ni de
+contabilidad de coberturas.
 
 > **Material educativo. No es asesoría financiera ni contable.**
 
-![Página Forward: de dónde sale el precio forward](docs/forward.png)
+**En línea:** [derivados-101.streamlit.app](https://derivados-101.streamlit.app)
 
-<p align="center"><img src="docs/estrategias_grafico.png" width="85%" alt="Collar del importador: resultado al vencimiento vs negocio sin cubrir y forward"></p>
+![Inicio: la lista de preguntas](docs/inicio.png)
 
-<sub>Arriba: el forward replicado paso a paso con los números del ejemplo. Abajo: un collar de importador acota el resultado del negocio entre dos strikes, a costo cero.</sub>
+<p align="center"><img src="docs/demo_mtm.png" width="49%" alt="Demo: MtM de un forward y cuándo el banco pide garantías"> <img src="docs/demo_collar.png" width="49%" alt="Demo: collar de costo cero, al subir el techo baja el piso"></p>
+
+<sub>Izquierda: mueves el forward de mercado y ves el MtM, cuánta línea de crédito usa y cuándo sale caja como garantía. Derecha: subes el techo del collar y el piso de costo cero se ajusta solo.</sub>
 
 ---
 
@@ -59,20 +63,35 @@ streamlit run app.py
 
 ---
 
-## Qué aprendes en cada página
+## Qué hay en la app
 
-| Página | Qué vas a entender |
-|---|---|
-| **Inicio** | Qué es un derivado, la diferencia entre *cubrirse* y *especular*, y el mapa de la app. |
-| **1 · Conceptos** | Preguntas frecuentes (qué es un forward, quién está al otro lado, qué pasa al vencimiento) y una introducción simplificada a cómo se contabilizan: a resultado vía valor de mercado (*mark-to-market*) vs. contabilidad de cobertura bajo IFRS 9. |
-| **2 · Forward** | De dónde sale el precio forward (paridad de tasas: no es una "apuesta" del banco), armado paso a paso con un préstamo sintético; liquidación con entrega física vs. por compensación; costo cubierto vs. no cubierto según dónde termine el dólar; y cómo evoluciona su valor de mercado en el tiempo. |
-| **3 · Opciones** | Call y put, compra y venta, perfil de ganancia/pérdida; valor intrínseco vs. valor tiempo; dentro/en/fuera del dinero (ITM/ATM/OTM); cómo se calcula la prima (modelo Garman-Kohlhagen); las "griegas"; y una simulación de 1.000 caminos posibles del dólar para ver por qué el tiempo tiene valor. |
-| **4 · Estrategias** | Estrategias listas (collar para importador y para exportador, spreads, straddle, strangle, seagull…) o tu propia combinación de hasta 4 opciones; cómo se ven junto a tu exposición real en dólares; puntos de equilibrio, prima neta y comparación contra un forward. |
-| **5 · USD/CLP** | El dólar observado histórico, su volatilidad, cuánto se ha movido en 1, 3, 6, 9 y 12 meses, y un ejercicio de "¿qué habría pasado si hubiera tomado un forward en tal fecha?". |
-| **6 · Quiz** | Preguntas para comprobar lo aprendido, con explicación de cada respuesta. |
+**Conceptos.** Nueve preguntas, en orden de lectura. Cada una tiene de 3 a 6 pantallas
+(concepto, ejemplo, demo interactiva y 3 ideas clave):
+
+1. ¿Qué es el riesgo cambiario?
+2. ¿Qué es un derivado?
+3. ¿Qué es un forward?
+4. ¿Qué tipos de forward hay?
+5. ¿Qué es el MtM y por qué piden garantías?
+6. ¿Qué es una opción?
+7. ¿De qué depende el precio de una opción?
+8. ¿Qué es un collar de costo cero?
+9. ¿Cuánto y cuándo cubrirse?
+
+**Simuladores.** Para quien quiera jugar con todos los parámetros: Forward (precio,
+liquidación, MtM), Opciones (resultado al vencimiento, de qué está hecha la prima),
+Estrategias (presets y combinaciones de hasta 4 opciones) y Dólar en Chile (histórico,
+cuánto se mueve y qué habría pasado cubriéndose).
+
+**Repasa.** Más preguntas frecuentes y un quiz corto.
+
+Donde la app simplifica, lo dice: en la realidad hay márgenes del banco, curvas de tasas
+y contratos de crédito que cambian los números.
 
 Los ejemplos usan casos genéricos (por ejemplo, *"un importador chileno que debe pagar
-USD 500.000 en un año"*). Todos los valores son editables.
+USD 500.000 en un año"*) con cifras fijas rotuladas como ejemplo: spot 890, tasas de 5,11%
+en pesos y 4,07% en dólares, forward a 1 año de 898,89. En los simuladores, el dólar de
+partida es el último observado disponible, y también es solo un ejemplo.
 
 ---
 
@@ -84,30 +103,35 @@ USD 500.000 en un año"*). Todos los valores son editables.
   así que funciona **sin internet**.
 - **Modo en vivo (opcional):** desde la app puedes pedir los datos actualizados a
   mindicador.cl. Si la consulta falla, la app vuelve automáticamente al CSV incluido.
-- Las tasas de interés y volatilidades de los ejemplos son **valores ilustrativos**,
-  no cotizaciones de mercado. Para operar, consulta precios reales con tu contraparte.
+- **Tasas de referencia** (`data/tasas_referencia.csv`): tasas interbancarias a 3 meses de
+  Chile y EE.UU. publicadas por la OCDE vía [FRED](https://fred.stlouisfed.org). Son una
+  aproximación: un banco cotiza con sus propias tasas y margen.
+- Un proceso de GitHub actualiza el dólar y las tasas cada lunes.
+- Las volatilidades de los ejemplos son **valores ilustrativos**, no cotizaciones de mercado. Para operar, consulta precios reales con tu contraparte.
 
 ---
 
 ## Cómo está organizado el código
 
-Para quien quiera leerlo o reutilizarlo. Python 3.12, interfaz en [Streamlit](https://streamlit.io),
+Para quien quiera leerlo o reutilizarlo. Python 3.11 o superior, interfaz en [Streamlit](https://streamlit.io),
 gráficos en Plotly. El cálculo está separado de la interfaz: toda la matemática vive en
 funciones puras, testeadas, que no saben nada de pantallas.
 
 ```
 derivados-101/
 ├── app.py                    # Entrada: navegación (st.navigation) con títulos e íconos
-├── app_pages/                # Una página por tema (Inicio, Conceptos, Forward, ...)
+├── app_pages/                # Inicio, simuladores, más preguntas y quiz
 ├── src/derivados101/         # Núcleo de cálculo, sin interfaz
+│   ├── curso/                # Las 9 preguntas: textos y demos de cada pantalla (puro)
+│   ├── curso_ui.py           # Dibuja las pantallas, las demos y sus gráficos
 │   ├── forward.py            # Precio forward, sintético, liquidación, valor de mercado
-│   ├── options.py            # Payoff, Garman-Kohlhagen, griegas, árbol binomial
+│   ├── options.py            # Payoff, prima (Garman-Kohlhagen), valor intrínseco y temporal
 │   ├── strategies.py         # Estrategias predefinidas, P&L combinado, breakevens
-│   ├── market.py             # Datos USD/CLP, volatilidad, backtest, simulación
+│   ├── market.py             # Dólar observado, tasas de referencia, volatilidad, backtest
 │   └── ui.py                 # Formatos ($ 1.234,56), paleta y disclaimer
 ├── tests/                    # Pruebas automáticas (pytest)
-├── data/                     # CSV del dólar observado
-├── scripts/                  # run.sh / run.bat para lanzar la app
+├── data/                     # CSV del dólar observado y de tasas de referencia
+├── scripts/                  # run.sh / run.bat y scripts de actualización de datos
 ├── pyproject.toml            # Metadatos y configuración de pytest y ruff
 └── CONTRACT.md               # Especificación: firmas de funciones y convenciones
 ```
